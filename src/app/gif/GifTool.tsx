@@ -108,6 +108,20 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     ro.observe(st); return () => ro.disconnect();
   }, []);
   useEffect(() => { if (active && s.v) drawPreview(); }, [active]);
+  // Space plays / pauses the preview unless a field has focus
+  const playRef = useRef(setPlaying); playRef.current = setPlaying;
+  useEffect(() => {
+    if (!active) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable)) return;
+      e.preventDefault();
+      if (el instanceof HTMLButtonElement) el.blur(); // keep Space from also pressing the focused button
+      if (!e.repeat && !g.current.busy) playRef.current(v.paused);
+    };
+    addEventListener('keydown', key); return () => removeEventListener('keydown', key);
+  }, [active, v]);
 
   // ---------- timeline
   async function makeThumbs() {
