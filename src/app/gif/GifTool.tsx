@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, us
 import { saveBlob, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
 import { DraftInput, Seg, StatusText } from '../ui';
-import { encodeGif, encodeMp4, encodeWebp, webpOK, type EncodeOpts } from './encoders';
+import { encodeGif, encodeMp4, encodeWebp, gifLibNow, loadGif, webpOK, type EncodeOpts } from './encoders';
 
 type Fmt = 'gif' | 'webp' | 'mp4';
 interface Template { id: string; name: string; fmt?: Fmt; w?: number; h?: number; lock?: boolean; fit?: 'cover' | 'contain'; target?: number; fps?: number; maxFrames?: number }
@@ -22,7 +22,7 @@ const TEMPLATES: Template[] = [
   { id: 'ig-sq', name: 'Instagram 正方形 1080×1080', fmt: 'mp4', w: 1080, h: 1080, lock: false, fit: 'cover', target: 0, fps: 30 },
   { id: 'ig-reel', name: 'Instagram リール 1080×1920', fmt: 'mp4', w: 1080, h: 1920, lock: false, fit: 'cover', target: 0, fps: 30 },
 ];
-const KEYS = ['fmt', 'w', 'h', 'lock', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q'] as const;
+const KEYS = ['fmt', 'w', 'h', 'lock', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'dot'] as const;
 const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
 const SPEEDS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2', '3', '4'];
 const fmtMB = (b: number) => (b / 1048576).toFixed(b < 1048576 * 10 ? 2 : 1) + ' MB';
@@ -30,7 +30,7 @@ const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 function initState() {
   const g = {
-    fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, tpl: 'custom',
+    fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, tpl: 'custom',
     v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
   try { Object.assign(g, JSON.parse(localStorage.getItem('gif:settings') || '{}')); } catch {}
@@ -69,6 +69,35 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
   }
+  // Pixel look: draw into a canvas 1/dot the size, optionally reduce colors, then scale up without smoothing.
+  // k = canvas px per output px (the preview is drawn smaller than the output).
+  const dotC = useRef<OffscreenCanvas | null>(null), pal = useRef<number[][] | null>(null);
+  const dotOn = () => s.dot > 1, posterize = () => dotOn() && s.colors < 256;
+  function drawFrame(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, W: number, H: number, k = 1) {
+    if (!dotOn()) return drawFit(ctx, W, H);
+    const d = s.dot, sw = Math.max(1, Math.ceil(W / k / d)), sh = Math.max(1, Math.ceil(H / k / d));
+    const c = dotC.current && dotC.current.width === sw && dotC.current.height === sh ? dotC.current : (dotC.current = new OffscreenCanvas(sw, sh));
+    const sc = c.getContext('2d', { willReadFrequently: true })!;
+    drawFit(sc, sw, sh);
+    const lib = gifLibNow();
+    if (alpha() || (posterize() && lib)) {
+      const img = sc.getImageData(0, 0, sw, sh), px = img.data;
+      if (alpha()) for (let i = 3; i < px.length; i += 4) px[i] = px[i] < 128 ? 0 : 255;
+      if (posterize() && lib) {
+        const fmt = alpha() ? 'rgba4444' : 'rgb565';
+        // one palette per setting, taken from the first frame drawn, so colors don't flicker between frames
+        if (!pal.current) pal.current = lib.quantize(px, s.colors, alpha() ? { format: fmt, oneBitAlpha: true } : { format: fmt });
+        const p = pal.current, idx = lib.applyPalette(px, p, fmt);
+        for (let i = 0; i < idx.length; i++) { const col = p[idx[i]]; px[i * 4] = col[0]; px[i * 4 + 1] = col[1]; px[i * 4 + 2] = col[2]; if (alpha()) px[i * 4 + 3] = col[3] ?? 255; }
+      }
+      sc.putImageData(img, 0, 0);
+    }
+    const dw = sw * d * k, dh = sh * d * k;
+    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(c, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    ctx.imageSmoothingEnabled = true;
+  }
   function seek(t: number) {
     return new Promise<void>(res => {
       const done = () => { clearTimeout(to); v.removeEventListener('seeked', done); res(); };
@@ -81,7 +110,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     const W = outW(), H = outH(), k = Math.min(1, 960 / Math.max(W, H));
     const pw = Math.max(1, Math.round(W * k)), ph = Math.max(1, Math.round(H * k));
     if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
-    drawFit(c.getContext('2d')!, pw, ph);
+    drawFrame(c.getContext('2d')!, pw, ph, pw / W);
   }
   const raf = useRef(0);
   function loopPreview() {
@@ -172,7 +201,12 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
 
   // ---------- inspector
   function lockFromW() { if (s.lock && s.sw) s.h = Math.max(1, Math.round(s.w * s.sh / s.sw)); }
-  function changed(custom = true) { if (custom) s.tpl = 'custom'; clearResult(); persist(); drawPreview(); bump(); }
+  function changed(custom = true) {
+    if (custom) s.tpl = 'custom';
+    pal.current = null; clearResult(); persist();
+    if (posterize() && !gifLibNow()) loadGif().then(() => { live.current.drawPreview(); });
+    drawPreview(); bump();
+  }
   function applyTemplate(id: string) {
     const t = TEMPLATES.find(x => x.id === id); s.tpl = id; if (!t || id === 'custom') return changed(false);
     for (const k of ['fmt', 'w', 'h', 'lock', 'fit', 'target', 'fps'] as const) if (t[k] !== undefined) (s as any)[k] = t[k];
@@ -211,7 +245,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     const n = frameCount(), fps = effFps(), c = new OffscreenCanvas(W, H), ctx = c.getContext('2d', { willReadFrequently: true })!;
     for (let i = 0; i < n; i++) {
       await seek(s.start + i * s.speed / fps);
-      drawFit(ctx, W, H);
+      drawFrame(ctx, W, H);
       await onFrame(i, n, c, ctx);
     }
   }
@@ -229,6 +263,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     s.busy = true; v.pause(); clearResult(); bump();
     const W = outW(), H = outH(), target = s.target ? s.target * 1048576 : 0;
     const eo: EncodeOpts = { fps: effFps(), loop: s.loop, useAlpha: alpha() };
+    if (posterize()) await loadGif();
     try {
       let best: Blob | null = null;
       if (s.fmt === 'mp4') best = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), t => status(t));
@@ -237,7 +272,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
         const frames = await grabRGBA(W, H);
         // per spec: keep px, lower colors / quality first, then drop frames
         const levels = s.fmt === 'gif'
-          ? [256, 128, 64, 32, 16].filter(c => c <= s.colors)
+          ? [256, 128, 64, 32, 16, 8, 4].filter(c => c <= s.colors)
           : [s.q, 70, 55, 40, 25, 10].filter((q, i) => i === 0 || q < s.q);
         const steps = target ? [1, 2, 3] : [1];
         let tries = 0;
@@ -260,7 +295,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   async function open(file: File) {
     v.pause(); clearResult();
     if (s.url) URL.revokeObjectURL(s.url);
-    s.url = URL.createObjectURL(file); s.name = file.name; v.src = s.url;
+    s.url = URL.createObjectURL(file); s.name = file.name; v.src = s.url; pal.current = null;
     try {
       await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('この動画は読み込めません')); });
       if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
@@ -343,7 +378,9 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
           </div>
           <div className="sec">
             <div className="prop"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
-            <label className="prop" htmlFor="gColors" id="gColorsRow" hidden={s.fmt !== 'gif'}><span>色数</span><select id="gColors" value={String(s.colors)} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16'].map(x => <option key={x}>{x}</option>)}</select></label>
+            <div className="prop" id="gDotRow"><span>ドット</span><span className="unit"><DraftInput id="gDot" className="n" type="number" min="1" max="64" placeholder="なし" value={s.dot > 1 ? s.dot : ''} onBlur={fieldBlur}
+              onDraft={text => { const val = +text; if (!isFinite(val)) return; s.dot = Math.max(0, Math.min(64, Math.round(val))); changed(); }} />px
+              <select id="gColors" aria-label="色数" value={String(s.colors)} hidden={s.fmt !== 'gif' && !dotOn()} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16', '8', '4'].map(x => <option key={x} value={x}>{x}色</option>)}</select></span></div>
             <label className="prop" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span>画質</span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
             <div className="prop"><span>設定</span><span className="unit"><button className="link" id="gPLoad" onClick={() => presetRef.current!.click()}>読込</button><button className="link" id="gPSave"
               onClick={() => saveBlob('gif-preset.json', new Blob([JSON.stringify({ type: 'gif-preset', version: 1, ...Object.fromEntries(KEYS.map(k => [k, s[k]])) }, null, 2)], { type: 'application/json' }))}>保存</button>
