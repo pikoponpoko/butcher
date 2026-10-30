@@ -20,6 +20,18 @@ export function App() {
   const appRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { t.openSample(sample); }, []);
+  useEffect(() => {
+    if (tool !== 'img') return;
+    const key = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) live.current.t.undo();
+      else if ((k === 'z' && e.shiftKey) || k === 'y') live.current.t.redo();
+      else return;
+      e.preventDefault();
+    };
+    addEventListener('keydown', key); return () => removeEventListener('keydown', key);
+  }, [tool]);
   useLayoutEffect(() => {
     // folded layers: the stage fills the screen below the (wrapping) toolbar
     const app = appRef.current!, bar = app.querySelector('.bar')!;

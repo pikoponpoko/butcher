@@ -16,10 +16,10 @@ const collapsed = new WeakSet<Node>();
 const CHK = 'conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0)';
 
 // ---------- left: layers / slices
-function RenameInput({ n, done }: { n: Node; done: () => void }) {
+function RenameInput({ t, n, done }: { t: ImageTool; n: Node; done: () => void }) {
   const [v, setV] = useState(nameOf(n)), ended = useRef(false), ref = useRef<HTMLInputElement>(null);
   useEffect(() => { ref.current!.focus(); ref.current!.select(); }, []);
-  const end = (ok: boolean) => { if (ended.current) return; ended.current = true; if (ok) { const t = v.trim(); n._rename = t && t !== n.name ? t : undefined; } done(); };
+  const end = (ok: boolean) => { if (ended.current) return; ended.current = true; if (ok) { const s = v.trim(); t.begin(); n._rename = s && s !== n.name ? s : undefined; t.end(); } done(); };
   return <input ref={ref} className="rn" value={v} aria-label="名前" onChange={e => setV(e.target.value)}
     onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') end(true); else if (e.key === 'Escape') end(false); }}
     onBlur={() => end(true)} onClick={e => e.stopPropagation()} />;
@@ -28,7 +28,7 @@ function RenameInput({ n, done }: { n: Node; done: () => void }) {
 function LayerTree({ t }: { t: ImageTool }) {
   const d = t.doc!, [renaming, setRenaming] = useState<Node | null>(null);
   const rows: ReactNode[] = [];
-  const setChecked = (n: Node, on: boolean) => { const f = (c: Node) => { on ? d.checked.add(c._id) : d.checked.delete(c._id); (c.children || []).forEach(f); }; f(n); t.bump(); };
+  const setChecked = (n: Node, on: boolean) => { const f = (c: Node) => { on ? d.checked.add(c._id) : d.checked.delete(c._id); (c.children || []).forEach(f); }; t.edit(() => f(n)); };
   (function walk(ch: Node[], depth: number) {
     for (let i = ch.length - 1; i >= 0; i--) {
       const n = ch[i];
@@ -42,7 +42,7 @@ function LayerTree({ t }: { t: ImageTool }) {
           <button className={'tw' + (collapsed.has(n) ? ' closed' : '')} aria-label="開閉" style={n.children ? undefined : { visibility: 'hidden' }}
             onClick={n.children ? e => { e.stopPropagation(); collapsed.has(n) ? collapsed.delete(n) : collapsed.add(n); t.bump(); } : undefined}>{n.children ? ICON.chev : null}</button>
           {n.children ? <span className="thumb folder">{ICON.folder}</span> : <span className="thumb" style={thumbStyle} />}
-          {renaming === n ? <RenameInput n={n} done={() => { setRenaming(null); t.bump(); }} /> :
+          {renaming === n ? <RenameInput t={t} n={n} done={() => { setRenaming(null); t.bump(); }} /> :
             <span className={'name' + (n._rename != null ? ' renamed' : '')} title={n._rename != null ? `元の名前：${n.name || ''}` : undefined}
               onDoubleClick={e => { e.stopPropagation(); setRenaming(n); }}>{nameOf(n) || '(名前なし)'}</span>}
           {n.clipping && <span className="tag">クリップ</span>}
@@ -67,7 +67,7 @@ function SliceList({ t, nameRef }: { t: ImageTool; nameRef: RefObject<HTMLInputE
         <div key={s.id} className={'row' + (s.id === d.sliceSel ? ' sel' : '')} onClick={() => { d.sliceSel = s.id; t.sliceChanged(); }}>
           <span className="name" onDoubleClick={e => { e.stopPropagation(); d.sliceSel = s.id; t.sliceChanged(); setTimeout(() => { nameRef.current?.focus(); nameRef.current?.select(); }); }}>{s.name}</span>
           <span className="tag num">{`${s.w}×${s.h}`}</span>
-          <input type="checkbox" className="ck" checked={s.on} aria-label="書き出し対象" onClick={e => e.stopPropagation()} onChange={e => { s.on = e.target.checked; t.sliceChanged(); }} />
+          <input type="checkbox" className="ck" checked={s.on} aria-label="書き出し対象" onClick={e => e.stopPropagation()} onChange={e => { const on = e.target.checked; t.edit(() => { s.on = on; }); }} />
         </div>
       ))}
     </div>
@@ -81,7 +81,7 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
     s[key] = n; clampSlice(s, d.psd.width, d.psd.height); t.sliceChanged();
   };
   return (
-    <div className="sprops sp" id="sprops">
+    <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') t.begin(); }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
       <div className="r">
         <input ref={nameRef} id="sName" type="text" aria-label="スライス名" value={s.name}
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
@@ -105,12 +105,12 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
 export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageTool; round: boolean; setRound: (v: boolean) => void; fold: boolean; setFold: (v: boolean) => void }) {
   const fileRef = useRef<HTMLInputElement>(null), nameRef = useRef<HTMLInputElement>(null);
   const layer = t.pane === 'layer', d = t.doc, s = curSlice(d);
-  const selAll = () => { if (!d) return; (function a(ch?: Node[]) { for (const n of ch || []) { d.checked.add(n._id); a(n.children); } })(d.psd.children); t.bump(); };
+  const selAll = () => { if (!d) return; t.edit(() => (function a(ch?: Node[]) { for (const n of ch || []) { d.checked.add(n._id); a(n.children); } })(d.psd.children)); };
   return (
     <aside className="panel layers" aria-label="レイヤー">
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={t.setPane} />
-        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { d?.checked.clear(); t.bump(); }}>解除</button></span>
+        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
         <span className="sp" hidden={layer}><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
         <button className="link fold" id="fold" aria-label={fold ? '開く' : '畳む'} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
@@ -124,13 +124,18 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
 
 // ---------- center: preview + slice editing
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-type Drag = { type: 'new' | 'move' | 'resize'; s: Slice; o: { x: number; y: number; w?: number; h?: number }; p: { x: number; y: number }; h?: string; added?: boolean };
+type Drag = { id: number; type: 'new' | 'move' | 'resize'; s: Slice; o: { x: number; y: number; w?: number; h?: number }; p: { x: number; y: number }; h?: string; added?: boolean };
 
 export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const stageRef = useRef<HTMLDivElement>(null), pvRef = useRef<HTMLCanvasElement>(null);
   const [avail, setAvail] = useState({ w: 0, h: 0 });
   const [drop, setDrop] = useState(false);
   const drag = useRef<Drag | null>(null), bounds = useRef({ x0: 0, y0: 0, x1: 1, y1: 1 });
+  // touch: 2-finger tap = undo, 3-finger tap = redo, a second finger during a slice drag = Shift.
+  // A touch drag starts only after the finger moves, so a multi-finger tap never edits a slice.
+  const touches = useRef(new Map<number, { x: number; y: number }>()).current;
+  const gest = useRef({ max: 0, t0: 0, moved: false, cancel: false });
+  const pend = useRef<{ id: number; target: Element; p: { x: number; y: number } } | null>(null);
   const d = t.doc, pv = t.preview, slicing = t.pane === 'slice';
 
   useLayoutEffect(() => {
@@ -166,25 +171,42 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const cvStyle: CSSProperties | undefined = fit ? { transform: `translate(${Math.round(((W - x1) - x0) * fit / 2)}px, ${Math.round(((H - y1) - y0) * fit / 2)}px)` } : undefined;
 
   const pt = (e: RPointerEvent) => { const r = pvRef.current!.getBoundingClientRect(), q = r.width / pvRef.current!.width; return { x: (e.clientX - r.left) / q, y: (e.clientY - r.top) / q }; };
-  function down(e: RPointerEvent<HTMLDivElement>) {
-    if (!slicing || !d || e.button !== 0 || (e.target as Element).closest('.warnbox')) return;
-    const p = pt(e), DW = d.psd.width, DH = d.psd.height;
-    const hd = (e.target as Element).closest<HTMLElement>('.hd'), sr = (e.target as Element).closest<HTMLElement>('.sr');
-    if (hd) { const s = curSlice(d)!; drag.current = { type: 'resize', h: hd.dataset.h, s, o: { ...s }, p }; }
-    else if (sr) { const s = d.slices.find(x => x.id === +sr.dataset.id!)!; d.sliceSel = s.id; drag.current = { type: 'move', s, o: { ...s }, p }; t.sliceChanged(); }
+  function startDrag(id: number, target: Element, p: { x: number; y: number }) {
+    if (!d) return; const DW = d.psd.width, DH = d.psd.height;
+    const hd = target.closest<HTMLElement>('.hd'), sr = target.closest<HTMLElement>('.sr');
+    t.begin();
+    if (hd) { const s = curSlice(d)!; drag.current = { id, type: 'resize', h: hd.dataset.h, s, o: { ...s }, p }; }
+    else if (sr) { const s = d.slices.find(x => x.id === +sr.dataset.id!)!; d.sliceSel = s.id; drag.current = { id, type: 'move', s, o: { ...s }, p }; t.sliceChanged(); }
     else {
       const x = Math.max(-DW, Math.min(2 * DW, Math.round(p.x))), y = Math.max(-DH, Math.min(2 * DH, Math.round(p.y)));
-      drag.current = { type: 'new', s: { id: newSliceId(), name: nextSliceName(d), x, y, w: 0, h: 0, on: true }, o: { x, y }, p };
+      drag.current = { id, type: 'new', s: { id: newSliceId(), name: nextSliceName(d), x, y, w: 0, h: 0, on: true }, o: { x, y }, p };
     }
+  }
+  function down(e: RPointerEvent<HTMLDivElement>) {
+    const touch = e.pointerType === 'touch';
+    if (touch) {
+      if (!touches.size) gest.current = { max: 0, t0: performance.now(), moved: false, cancel: false };
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); gest.current.max = Math.max(gest.current.max, touches.size);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    if (!slicing || !d || e.button !== 0 || (e.target as Element).closest('.warnbox')) return;
+    if (touch) { if (touches.size === 1 && !drag.current) pend.current = { id: e.pointerId, target: e.target as Element, p: pt(e) }; e.preventDefault(); return; }
+    startDrag(e.pointerId, e.target as Element, pt(e));
     e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
   }
   function move(e: RPointerEvent) {
-    const g = drag.current; if (!g || !d) return;
+    const t0 = touches.get(e.pointerId);
+    if (t0 && Math.hypot(e.clientX - t0.x, e.clientY - t0.y) > 8) {
+      gest.current.moved = true;
+      const pd = pend.current; if (pd && pd.id === e.pointerId) { pend.current = null; startDrag(pd.id, pd.target, pd.p); }
+    }
+    const g = drag.current; if (!g || !d || g.id !== e.pointerId) return;
+    const shift = e.shiftKey || touches.size >= 2;
     const p = pt(e), DW = d.psd.width, DH = d.psd.height, X0 = -DW, X1 = 2 * DW, Y0 = -DH, Y1 = 2 * DH, dx = p.x - g.p.x, dy = p.y - g.p.y, s = g.s, o = g.o as Slice;
     if (g.type === 'new') {
       const x2 = Math.max(X0, Math.min(X1, Math.round(p.x))), y2 = Math.max(Y0, Math.min(Y1, Math.round(p.y)));
       let w = Math.abs(x2 - o.x), h = Math.abs(y2 - o.y);
-      if (e.shiftKey) { w = h = Math.min(Math.max(w, h), x2 < o.x ? o.x - X0 : X1 - o.x, y2 < o.y ? o.y - Y0 : Y1 - o.y); }
+      if (shift) { w = h = Math.min(Math.max(w, h), x2 < o.x ? o.x - X0 : X1 - o.x, y2 < o.y ? o.y - Y0 : Y1 - o.y); }
       Object.assign(s, { x: x2 < o.x ? o.x - w : o.x, y: y2 < o.y ? o.y - h : o.y, w, h });
       if (!g.added && s.w >= 2 && s.h >= 2) { g.added = true; d.slices.push(s); d.sliceSel = s.id; }
       if (g.added) t.sliceChanged();
@@ -197,7 +219,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       if (h.includes('e')) x2 = Math.max(x1 + 1, Math.min(X1, Math.round(o.x + o.w + dx)));
       if (h.includes('n')) y1 = Math.min(y2 - 1, Math.max(Y0, Math.round(o.y + dy)));
       if (h.includes('s')) y2 = Math.max(y1 + 1, Math.min(Y1, Math.round(o.y + o.h + dy)));
-      if (e.shiftKey) {
+      if (shift) {
         // keep the original aspect ratio, anchored on the opposite side/corner
         const r = o.w / o.h, ax = h.includes('w') ? o.x + o.w : h.includes('e') ? o.x : o.x + o.w / 2, ay = h.includes('n') ? o.y + o.h : h.includes('s') ? o.y : o.y + o.h / 2;
         let w = x2 - x1, hh = y2 - y1;
@@ -211,7 +233,16 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
     }
     t.sliceChanged();
   }
-  function up() { const g = drag.current; if (!g || !d) return; drag.current = null; if (g.type === 'new' && !g.added) d.sliceSel = null; t.sliceChanged(); }
+  function up(e: RPointerEvent) {
+    if (touches.delete(e.pointerId)) {
+      if (e.type === 'pointercancel') gest.current.cancel = true;
+      if (pend.current?.id === e.pointerId) pend.current = null;
+      const gs = gest.current;
+      if (!touches.size && gs.max >= 2 && !gs.moved && !gs.cancel && performance.now() - gs.t0 < 500) { if (gs.max === 2) t.undo(); else t.redo(); }
+    }
+    const g = drag.current; if (!g || !d || g.id !== e.pointerId) return;
+    drag.current = null; if (g.type === 'new' && !g.added) d.sliceSel = null; t.end(); t.sliceChanged();
+  }
 
   useEffect(() => {
     if (!slicing || !d) return;
@@ -220,7 +251,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       const s = curSlice(d); if (!s) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { t.deleteSlice(); e.preventDefault(); return; }
       const m = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[e.key]; if (!m) return;
-      const q = e.shiftKey ? 10 : 1; s.x += m[0] * q; s.y += m[1] * q; clampSlice(s, d.psd.width, d.psd.height); t.sliceChanged(); e.preventDefault();
+      const q = e.shiftKey ? 10 : 1; t.edit(() => { s.x += m[0] * q; s.y += m[1] * q; clampSlice(s, d.psd.width, d.psd.height); }); e.preventDefault();
     };
     addEventListener('keydown', key); return () => removeEventListener('keydown', key);
   });

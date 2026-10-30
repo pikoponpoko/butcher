@@ -79,7 +79,7 @@ button, select, input { font: inherit; color: inherit; }
 .cv { position: relative; line-height: 0; }
 .sl { position: absolute; inset: 0; touch-action: none; }
 .sl.on, .stage.slicing { cursor: crosshair; }
-.stage.slicing { touch-action: none; }
+#stage { touch-action: pan-y; } #stage.slicing { touch-action: none; }
 .sr { position: absolute; box-sizing: border-box; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); cursor: move; }
 .sr.off { border-style: dashed; background: none; }
 .sr.sel { border-width: 2px; background: color-mix(in srgb, var(--accent) 18%, transparent); }

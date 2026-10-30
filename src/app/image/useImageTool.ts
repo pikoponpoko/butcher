@@ -1,7 +1,7 @@
 // Image tool state. Documents are large mutable objects (parsed PSD trees), so they stay mutable and
 // `bump()` re-renders after an in-place change.
 import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
-import { type Doc, type Node, type Slice, SRC_RE, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
+import { type Doc, type Node, type Slice, type Snap, SRC_RE, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
 
@@ -42,6 +42,17 @@ export function useImageTool() {
   }
   function sliceChanged() { if (doc) persistSlices(doc); bump(); }
 
+  // undo / redo per document: begin() before an edit, end() after it (drops the entry when nothing changed)
+  const hist = useRef(new WeakMap<Doc, { u: Snap[]; r: Snap[] }>()).current;
+  const stacks = (d: Doc) => { let h = hist.get(d); if (!h) hist.set(d, h = { u: [], r: [] }); return h; };
+  function begin() { if (!doc) return; const h = stacks(doc); h.u.push(snap(doc)); if (h.u.length > 200) h.u.shift(); }
+  function end() { if (!doc) return; const h = stacks(doc), top = h.u[h.u.length - 1]; if (!top) return; if (sameSnap(top, snap(doc))) h.u.pop(); else h.r.length = 0; }
+  function edit(f: () => void) { begin(); f(); end(); sliceChanged(); }
+  function step(back: boolean) {
+    if (!doc) return; const h = stacks(doc), [from, to] = back ? [h.u, h.r] : [h.r, h.u], s = from.pop(); if (!s) return;
+    to.push(snap(doc)); restore(doc, s); sliceChanged();
+  }
+
   async function openFiles(files: File[]) {
     let last: Doc | undefined;
     for (const f of files) {
@@ -72,7 +83,7 @@ export function useImageTool() {
   // slices
   function deleteSlice() {
     if (!doc) return; const i = doc.slices.findIndex(s => s.id === doc.sliceSel); if (i < 0) return;
-    doc.slices.splice(i, 1); doc.sliceSel = (doc.slices[i] || doc.slices[i - 1] || {} as Partial<Slice>).id ?? null; sliceChanged();
+    edit(() => { doc.slices.splice(i, 1); doc.sliceSel = (doc.slices[i] || doc.slices[i - 1] || {} as Partial<Slice>).id ?? null; });
   }
   async function saveSlices() {
     if (!doc) return;
@@ -85,8 +96,9 @@ export function useImageTool() {
     try {
       const j = JSON.parse(await f.text()); if (!Array.isArray(j.slices)) throw new Error();
       const W = doc.psd.width, H = doc.psd.height;
+      begin();
       doc.slices = j.slices.map((s: any) => { const o: Slice = { id: newSliceId(), name: String(s.name || '') || nextSliceName(doc), x: +s.x || 0, y: +s.y || 0, w: +s.w || 1, h: +s.h || 1, on: s.on !== false }; clampSlice(o, W, H); return o; });
-      doc.sliceSel = doc.slices[0]?.id ?? null; if (pane !== 'slice') setPane('slice'); sliceChanged();
+      doc.sliceSel = doc.slices[0]?.id ?? null; end(); if (pane !== 'slice') setPane('slice'); sliceChanged();
       setStatus((j.width && (j.width !== W || j.height !== H)) ? [{ t: `キャンバスサイズが異なります（${j.width}×${j.height}）`, c: 'warn' }] : [{ t: `${doc.slices.length} 件のスライスを読込`, c: 'ok' }]);
     } catch { setStatus([{ t: 'スライス設定を読み込めません', c: 'err' }]); }
   }
@@ -94,6 +106,7 @@ export function useImageTool() {
   return {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
     openFiles, openSample, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, saveSlices, loadSlices,
+    begin, end, edit, undo: () => step(true), redo: () => step(false),
     accepts: (f: File) => SRC_RE.test(f.name),
   };
 }

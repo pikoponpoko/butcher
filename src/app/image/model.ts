@@ -110,6 +110,18 @@ function loadSlicesLocal(name: string, psd: PsdDoc): Slice[] {
   try { const a = JSON.parse(localStorage.getItem(slKey(name, psd)) || '[]'); return a.map((s: Slice) => ({ ...s, id: ++slSeq, on: s.on !== false })); } catch { return []; }
 }
 export const sliceData = (d: Doc) => d.slices.map(({ name, x, y, w, h, on }) => ({ name, x, y, w, h, on }));
+// undo history: export checks, layer renames and slices (selection is restored but is not an edit by itself)
+export type Snap = { slices: Slice[]; sel: number | null; checked: number[]; ren: [number, string][] };
+function eachNode(d: Doc, f: (n: Node) => void) { (function w(ch?: Node[]) { for (const n of ch || []) { f(n); w(n.children); } })(d.psd.children); }
+export function snap(d: Doc): Snap {
+  const ren: [number, string][] = []; eachNode(d, n => { if (n._rename != null) ren.push([n._id, n._rename]); });
+  return { slices: d.slices.map(s => ({ ...s })), sel: d.sliceSel, checked: [...d.checked].sort((a, b) => a - b), ren };
+}
+export const sameSnap = (a: Snap, b: Snap) => JSON.stringify({ ...a, sel: 0 }) === JSON.stringify({ ...b, sel: 0 });
+export function restore(d: Doc, s: Snap) {
+  const ren = new Map(s.ren);
+  d.slices = s.slices.map(x => ({ ...x })); d.sliceSel = s.sel; d.checked = new Set(s.checked); eachNode(d, n => { n._rename = ren.get(n._id); });
+}
 export function persistSlices(d: Doc) { try { localStorage.setItem(slKey(d.name, d.psd), JSON.stringify(sliceData(d))); } catch {} }
 export function nextSliceName(d: Doc) { let i = d.slices.length + 1; const has = (n: string) => d.slices.some(s => s.name === n); while (has(`slice_${String(i).padStart(2, '0')}`)) i++; return `slice_${String(i).padStart(2, '0')}`; }
 export function clampSlice(s: Slice, W: number, H: number) {
