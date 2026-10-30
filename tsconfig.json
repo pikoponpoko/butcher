@@ -12,6 +12,7 @@
     "checkJs": false,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "jsx": "react-jsx",
     "noEmit": true
   },
   "include": ["src", "tests", "vite.config.ts"]

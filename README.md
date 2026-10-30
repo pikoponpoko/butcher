@@ -16,7 +16,8 @@ npm run build      # dist/ に書き出し
 
 - `src/core/psdcore.ts` — レイヤー合成（描画モード・マスク・クリッピング）と書き出し対象の列挙
 - `src/core/clipreader.ts` — .clip の読み込み（非公式の解析。通常レイヤー・表示・不透明度・フォルダのみ検証済み）
-- `src/app/editor.js` — 画像ツールの画面（レイヤー、スライス、プレビュー、書き出し）
-- `src/app/giftool.js` — GIF・動画ツールの画面とエンコード
+- `src/app/App.tsx` — 画面全体（React）。ツールバーと各ツールの切り替え、ファイルのドロップ
+- `src/app/image/` — 画像ツール（レイヤー、スライス、プレビュー、書き出し）。`model.ts`・`exporter.ts` は React に依存しない処理
+- `src/app/gif/` — GIF・動画ツールの画面（`GifTool.tsx`）とエンコーダー（`encoders.ts`）
 - `samples/` — テスト用 PSD（画面のサンプル選択と自動テストで共用）
 - `tests/` — 合成結果のスナップショット、PSD 内の統合画像との比較、描画モードの単体テスト
