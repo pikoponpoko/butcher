@@ -124,6 +124,7 @@ button, select, input { font: inherit; color: inherit; }
 .prop.signrow { grid-template-columns: 64px minmax(0, 1fr) auto; }
 .prop.signrow input.t { width: 100%; min-width: 0; justify-self: stretch; }
 .gif .prop.signrow { grid-template-columns: 80px minmax(0, 1fr) auto; }
+.gif .prop.signopt { grid-template-columns: minmax(0, 1fr); } .gif .signopt > span:first-child { display: none; }
 .signopt .unit { gap: 6px; }
 .signopt .seg button { padding: 0 6px; }
 .sumrow { display: flex; justify-content: space-between; gap: 8px; min-height: 16px; }
