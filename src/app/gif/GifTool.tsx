@@ -355,12 +355,12 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
         <div className="insp">
           <div className="sec">
             <div className="prop use"><Seg id="gUse" value={u} options={[['custom', 'カスタム'], ['web', 'Web'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={setUse} /></div>
-            <div className="prop"><span>形式</span><Seg id="gFmt" disabled={u === 'wp'} value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]}
+            <div className="prop" hidden={u === 'wp'}><span>形式</span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]}
               hiddenValues={u === 'web' ? ['mp4'] : u === 'sns' ? ['webp'] : u === 'wp' ? ['gif', 'webp'] : []} onChange={setFmt} /></div>
           </div>
           <div className="sec">
             {sets && SERVICES[u].filter(([svc]) => !(s.fmt === 'gif' && svc === 'ig')).map(([svc, label]) => (
-              <div key={svc} className="prop"><span>{label}</span>
+              <div key={svc} className="prop ps"><span>{label}</span>
                 <Toggles id={'gPs-' + svc} values={s.picks} options={VIDEO_PRESETS.filter(x => x.svc === svc && (s.fmt !== 'gif' || X_GIF[x.id])).map(x => [x.id, x.label])} onToggle={id => { s.picks = toggleId(s.picks, id); presetPreview(); changed(); }} /></div>
             ))}
             <div className="prop" hidden={sets}><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
