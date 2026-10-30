@@ -2,10 +2,11 @@
 import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
 import { saveBlob, saveFailText } from '../save';
+import { type SnsSize, SNS_IMAGE, snsImageExt, snsPicked } from '../sns';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
-  mode: Mode; fmt: 'png' | 'jpeg' | 'webp'; quality: string; size: 'orig' | 'w' | 'h'; px: string; basis: 'canvas' | 'image'; trim: boolean;
+  mode: Mode; fmt: 'png' | 'jpeg' | 'webp'; quality: string; size: 'orig' | 'w' | 'h' | 'sns'; sns: string[]; snsFit: 'cover' | 'contain'; px: string; basis: 'canvas' | 'image'; trim: boolean;
   prefix: string; suffix: string; hidden: boolean; tree: boolean; slFill: boolean; allFiles: boolean; incWarn: boolean; out: 'zip' | 'each' | 'dir';
 }
 // Status line in the inspector footer: plain text or colored parts.
@@ -46,39 +47,72 @@ function fillTransparent(px: Uint8ClampedArray, w: number, h: number) {
     px[p] = px[p] * k + c[0] * (1 - k); px[p + 1] = px[p + 1] * k + c[1] * (1 - k); px[p + 2] = px[p + 2] * k + c[2] * (1 - k); px[p + 3] = 255;
   }
 }
-async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null) {
+// Most common color along the border of a rect, or null when the border is mostly transparent.
+function borderColor(c: HTMLCanvasElement, x: number, y: number, w: number, h: number) {
+  const px = c.getContext('2d')!.getImageData(x, y, w, h).data, bins = new Map<number, number[]>(); let n = 0, op = 0;
+  const add = (i: number, j: number) => {
+    const p = (j * w + i) * 4; n++; if (px[p + 3] < 255) return; op++;
+    const k = (px[p] >> 4) << 8 | (px[p + 1] >> 4) << 4 | px[p + 2] >> 4, b = bins.get(k) || [0, 0, 0, 0];
+    b[0] += px[p]; b[1] += px[p + 1]; b[2] += px[p + 2]; b[3]++; bins.set(k, b);
+  };
+  for (let i = 0; i < w; i++) { add(i, 0); if (h > 1) add(i, h - 1); }
+  for (let j = 1; j < h - 1; j++) { add(0, j); if (w > 1) add(w - 1, j); }
+  if (op * 2 < n) return null;
+  let best: number[] | null = null; for (const b of bins.values()) if (!best || b[3] > best[3]) best = b;
+  return `rgb(${Math.round(best![0] / best![3])},${Math.round(best![1] / best![3])},${Math.round(best![2] / best![3])})`;
+}
+async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null, sns?: SnsSize | null) {
   let c = toCanvas(rgba, W, H), x = 0, y = 0, w = W, h = H;
   if (crop) { c = toCanvas(cropPixels(rgba, W, H, crop, o.slFill), crop.w, crop.h); w = crop.w; h = crop.h; }
   else if (o.trim) { const b = PsdCore.alphaBounds(rgba, W, H); if (!b) return null; ({ x, y, w, h } = b); }
-  const px = Math.max(1, +o.px || 1);
-  const s = o.size === 'orig' ? 1 : o.basis === 'canvas' ? px / (o.size === 'w' ? W : H) : px / (o.size === 'w' ? w : h);
-  const out = document.createElement('canvas'); out.width = Math.max(1, Math.round(w * s)); out.height = Math.max(1, Math.round(h * s));
-  const ctx = out.getContext('2d')!; ctx.imageSmoothingQuality = 'high';
-  if (o.fmt === 'jpeg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, out.width, out.height); }
-  ctx.drawImage(c, x, y, w, h, 0, 0, out.width, out.height);
+  const fmt = sns ? (snsImageExt(sns) === 'jpg' ? 'jpeg' : 'png') : o.fmt;
+  const out = document.createElement('canvas'), ctx = out.getContext('2d')!;
+  let dx = 0, dy = 0, dw: number, dh: number;
+  if (sns) {
+    // cover crops the center; contain pads with the image's border color (transparent when the border is)
+    out.width = sns.w; out.height = sns.h;
+    const k = o.snsFit === 'cover' ? Math.max(sns.w / w, sns.h / h) : Math.min(sns.w / w, sns.h / h);
+    dw = w * k; dh = h * k; dx = (sns.w - dw) / 2; dy = (sns.h - dh) / 2;
+  } else {
+    const px = Math.max(1, +o.px || 1);
+    const s = o.size === 'orig' ? 1 : o.basis === 'canvas' ? px / (o.size === 'w' ? W : H) : px / (o.size === 'w' ? w : h);
+    out.width = dw = Math.max(1, Math.round(w * s)); out.height = dh = Math.max(1, Math.round(h * s));
+  }
+  ctx.imageSmoothingQuality = 'high';
+  const pad = sns && o.snsFit === 'contain' ? borderColor(c, x, y, w, h) : null;
+  if (fmt === 'jpeg' || pad) { ctx.fillStyle = pad || '#ffffff'; ctx.fillRect(0, 0, out.width, out.height); }
+  ctx.drawImage(c, x, y, w, h, dx, dy, dw, dh);
   const q = Math.min(100, Math.max(1, +o.quality || 90)) / 100;
-  return await new Promise<Blob | null>(res => out.toBlob(res, 'image/' + o.fmt, q));
+  return await new Promise<Blob | null>(res => out.toBlob(res, 'image/' + fmt, q));
 }
 async function writeTo(dir: FileSystemDirectoryHandle, path: string, blob: Blob) {
   const parts = path.split('/'), file = parts.pop()!;
   for (const p of parts) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(file, { create: true })).createWritable(); await w.write(blob); await w.close();
 }
-const extOf = (o: Settings) => o.fmt === 'jpeg' ? 'jpg' : o.fmt;
+const extOf = (o: Settings, v?: SnsSize | null) => v ? snsImageExt(v) : o.fmt === 'jpeg' ? 'jpg' : o.fmt;
+// One entry per file written for each target: the SNS sizes, or the plain export.
+export const variantsOf = (o: Settings): (SnsSize | null)[] => o.size === 'sns' ? snsPicked(SNS_IMAGE, o.sns) : [null];
+const tagOf = (v: SnsSize | null) => v ? '_' + v.id : '';
 
 export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice | null): Promise<Status> {
   const r = renderNode(d, n, o.hidden);
-  const blob = await encode(o, r.rgba, r.W, r.H, s);
-  if (!blob) return [{ t: '空の画像です', c: 'err' }];
-  const base = s ? s.name : n ? nameOf(n) : stem(d.name);
-  const res = await saveBlob(o.prefix + safe(base) + o.suffix + '.' + extOf(o), blob);
-  return res === 'ok' ? [{ t: '1 ファイルを書き出し', c: 'ok' }] : [{ t: saveFailText(res) }];
+  const base = s ? s.name : n ? nameOf(n) : stem(d.name), vs = variantsOf(o);
+  if (!vs.length) return [{ t: 'サイズを選んでください', c: 'err' }];
+  for (const v of vs) {
+    const blob = await encode(o, r.rgba, r.W, r.H, s, v);
+    if (!blob) return [{ t: '空の画像です', c: 'err' }];
+    const res = await saveBlob(o.prefix + safe(base) + o.suffix + tagOf(v) + '.' + extOf(o, v), blob);
+    if (res !== 'ok') return [{ t: saveFailText(res) }];
+  }
+  return [{ t: `${vs.length} ファイルを書き出し`, c: 'ok' }];
 }
 
 declare global { function showDirectoryPicker(o?: { mode?: string }): Promise<FileSystemDirectoryHandle> }
 // Returns the final status; `progress` reports per-file progress, `noDir` is called when folder output isn't available.
 export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void): Promise<Status> {
-  const zip = new JSZip(), report: string[] = [], ext = extOf(o);
+  const zip = new JSZip(), report: string[] = [], vs = variantsOf(o);
+  if (!vs.length) return [{ t: 'サイズを選んでください', c: 'err' }];
   let dir: FileSystemDirectoryHandle | null = null;
   if (o.out === 'dir') {
     try { dir = await showDirectoryPicker({ mode: 'readwrite' }); }
@@ -98,17 +132,20 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
         const ws = dedupe(r.warnings.filter(w => w.type !== 'text'));
         let stemName = safe(t.s ? t.s.name : nameOf(t.n));
         if (t.s) { let k = 2; const b = stemName; while (used.has(stemName)) stemName = `${b}_${k++}`; used.add(stemName); }
-        const fname = o.prefix + stemName + o.suffix + '.' + ext;
         const rel = o.mode === 'both' ? (t.kind === 'folder' ? 'folders/' : 'layers/') : '';
-        const path = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : '')) + fname;
-        if (ws.length) report.push(`${path}\n` + ws.map(w => `  - ${w.path}: ${WARN_JA[w.type] || w.type}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
-        if (ws.length && !o.incWarn) { skipped++; continue; }
-        const blob = await encode(o, r.rgba, r.W, r.H, t.s);
-        if (!blob) { report.push(`${path}\n  - 空の画像のため省略`); continue; }
-        if (dir) await writeTo(dir, path, blob);
-        else if (o.out === 'each') { const res = await saveBlob(path.replace(/\//g, '_'), blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
-        else zip.file(path, blob);
-        written++;
+        const dirPath = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : ''));
+        const name0 = dirPath + o.prefix + stemName + o.suffix;
+        if (ws.length) report.push(`${name0}\n` + ws.map(w => `  - ${w.path}: ${WARN_JA[w.type] || w.type}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
+        if (ws.length && !o.incWarn) { skipped += vs.length; continue; }
+        for (const v of vs) {
+          const path = name0 + tagOf(v) + '.' + extOf(o, v);
+          const blob = await encode(o, r.rgba, r.W, r.H, t.s, v);
+          if (!blob) { report.push(`${path}\n  - 空の画像のため省略`); break; }
+          if (dir) await writeTo(dir, path, blob);
+          else if (o.out === 'each') { const res = await saveBlob(path.replace(/\//g, '_'), blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
+          else zip.file(path, blob);
+          written++;
+        }
       }
     }
     const done: Status = [{ t: `${written} ファイルを書き出し`, c: 'ok' }, ...(skipped ? [{ t: ' · ' }, { t: `${skipped} 件を省略`, c: 'warn' as const }] : [])];

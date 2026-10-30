@@ -125,7 +125,8 @@ button, select, input { font: inherit; color: inherit; }
 .sec h3 { margin: 0; font-size: 11px; font-weight: 600; color: var(--muted); }
 .seg { display: inline-grid; grid-auto-flow: column; justify-self: start; width: max-content; background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 2px; gap: 2px; }
 .seg button { border: 0; background: transparent; height: 21px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; border-radius: 4px; cursor: pointer; color: var(--muted); }
-.seg button:hover { color: var(--fg); }
+.seg button:hover:not(:disabled) { color: var(--fg); }
+.seg button:disabled { opacity: .5; cursor: default; }
 .seg button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--line); font-weight: 500; }
 .kv { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 8px; }
 .kv > span { color: var(--muted); }
@@ -192,7 +193,7 @@ button, select, input { font: inherit; color: inherit; }
   .insp .sec > .prop.pair > .seg { display: flex; width: auto; justify-self: stretch; }
   .insp .sec > .prop.pair > .seg button { flex: 1 1 auto; }
   .insp .sec > .prop.pair.nl .seg button { padding: 0 7px; }
-  #sizeRow { order: 1; }
+  #sizeRow, .prop.sns { order: 1; }
   #sizeRow, #qualityRow { grid-template-columns: 36px auto 1fr; }
   .insp .sec > .prop.pair.fill { flex: 1 1 0; min-width: 0; grid-template-columns: auto minmax(0, 1fr); }
   .prop.pair.fill input.t { width: 100%; min-width: 0; }

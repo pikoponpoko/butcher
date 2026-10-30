@@ -3,13 +3,16 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type Ref } from 'react';
 import { saveBlob, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
-import { DraftInput, Seg, StatusText } from '../ui';
+import { DraftInput, Seg, StatusText, Toggles } from '../ui';
+import { SNS_DEFAULT, SNS_SERVICES, SNS_VIDEO, snsPicked, toggleId } from '../sns';
+import JSZip from 'jszip';
 import { encodeGif, encodeMp4, encodeWebp, webpOK, type EncodeOpts } from './encoders';
 
 type Fmt = 'gif' | 'webp' | 'mp4';
 interface Template { id: string; name: string; fmt?: Fmt; w?: number; h?: number; lock?: boolean; fit?: 'cover' | 'contain'; target?: number; fps?: number; maxFrames?: number }
 const TEMPLATES: Template[] = [
   { id: 'custom', name: 'カスタム' },
+  { id: 'sns', name: 'X・Instagram 一括', fmt: 'mp4', lock: false, fit: 'cover', target: 0, fps: 30 },
   { id: 'web-gif', name: 'Web GIF', fmt: 'gif', w: 800, lock: true, target: 2, fps: 15 },
   { id: 'web-webp', name: 'Web アニメWebP', fmt: 'webp', w: 800, lock: true, target: 1, fps: 20 },
   { id: 'x-gif-l', name: 'X GIF 横 1280×720', fmt: 'gif', w: 1280, h: 720, lock: false, fit: 'cover', target: 15, fps: 15, maxFrames: 350 },
@@ -22,7 +25,7 @@ const TEMPLATES: Template[] = [
   { id: 'ig-sq', name: 'Instagram 正方形 1080×1080', fmt: 'mp4', w: 1080, h: 1080, lock: false, fit: 'cover', target: 0, fps: 30 },
   { id: 'ig-reel', name: 'Instagram リール 1080×1920', fmt: 'mp4', w: 1080, h: 1920, lock: false, fit: 'cover', target: 0, fps: 30 },
 ];
-const KEYS = ['fmt', 'w', 'h', 'lock', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q'] as const;
+const KEYS = ['fmt', 'w', 'h', 'lock', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'sns'] as const;
 const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
 const SPEEDS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2', '3', '4'];
 const fmtMB = (b: number) => (b / 1048576).toFixed(b < 1048576 * 10 ? 2 : 1) + ' MB';
@@ -30,7 +33,7 @@ const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 function initState() {
   const g = {
-    fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, tpl: 'custom',
+    fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, tpl: 'custom', sns: SNS_DEFAULT,
     v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
   try { Object.assign(g, JSON.parse(localStorage.getItem('gif:settings') || '{}')); } catch {}
@@ -172,11 +175,15 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
 
   // ---------- inspector
   function lockFromW() { if (s.lock && s.sw) s.h = Math.max(1, Math.round(s.w * s.sh / s.sw)); }
-  function changed(custom = true) { if (custom) s.tpl = 'custom'; clearResult(); persist(); drawPreview(); bump(); }
+  function changed(custom = true) { if (custom && s.tpl !== 'sns') s.tpl = 'custom'; clearResult(); persist(); drawPreview(); bump(); }
+  // SNS set: the preview shows the first checked size
+  const isSns = () => s.tpl === 'sns', snsSizes = () => snsPicked(SNS_VIDEO, s.sns);
+  function snsPreviewSize() { const f = snsSizes()[0]; if (f) { s.w = f.w; s.h = f.h; } }
   function applyTemplate(id: string) {
     const t = TEMPLATES.find(x => x.id === id); s.tpl = id; if (!t || id === 'custom') return changed(false);
     for (const k of ['fmt', 'w', 'h', 'lock', 'fit', 'target', 'fps'] as const) if (t[k] !== undefined) (s as any)[k] = t[k];
-    if (t.h === undefined) lockFromW();
+    if (t.h === undefined && id !== 'sns') lockFromW();
+    if (id === 'sns') snsPreviewSize();
     if (s.fmt === 'mp4' && s.bg === 'transparent') s.bg = '#000000';
     changed(false);
   }
@@ -230,6 +237,18 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     const W = outW(), H = outH(), target = s.target ? s.target * 1048576 : 0;
     const eo: EncodeOpts = { fps: effFps(), loop: s.loop, useAlpha: alpha() };
     try {
+      if (isSns()) {
+        const sizes = snsSizes(); if (!sizes.length) throw new Error('サイズを選んでください');
+        const zip = new JSZip(), base = s.name.replace(/\.[^.]+$/, '');
+        for (let j = 0; j < sizes.length; j++) {
+          const z = sizes[j];
+          const b = await encodeMp4(z.w, z.h, effFps(), frameCount(), s.target, cb => captureFrames(z.w, z.h, (i, n, c) => cb(i, n, c)), t => status(`${j + 1}/${sizes.length} ${t}`));
+          zip.file(`${base}_${z.id}.mp4`, b);
+        }
+        const r = await saveBlob(base + '_sns.zip', await zip.generateAsync({ type: 'blob' }));
+        if (r === 'ok') status(`${sizes.length} ファイルを書き出し`, 'ok'); else status(saveFailText(r));
+        return;
+      }
       let best: Blob | null = null;
       if (s.fmt === 'mp4') best = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), t => status(t));
       else {
@@ -281,8 +300,9 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   const p = (t: number) => (t / s.dur * 100) + '%';
   const tpl = TEMPLATES.find(x => x.id === s.tpl), n = frameCount();
   const fitHidden = s.lock && s.v, bgHidden = s.fit !== 'contain' || (s.lock && s.v);
+  const sns = isSns();
   const sum = s.v ? <>
-    {`${outW()}×${outH()} · ${n} フレーム · ${((s.end - s.start) / s.speed).toFixed(2)}秒`}
+    {`${sns ? `${snsSizes().length} ファイル` : `${outW()}×${outH()}`} · ${n} フレーム · ${((s.end - s.start) / s.speed).toFixed(2)}秒`}
     {tpl?.maxFrames && n > tpl.maxFrames ? <> · <span className="warn">{`${tpl.maxFrames} フレームを超えています`}</span></> : null}
     {s.fmt === 'gif' && s.fps > 50 ? <> · <span className="warn">GIFは50fpsまで</span></> : null}
   </> : null;
@@ -322,12 +342,16 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
         <div className="insp">
           <div className="sec">
             <label className="prop" htmlFor="gTpl"><span>テンプレート</span><select id="gTpl" value={s.tpl} onChange={e => applyTemplate(e.target.value)}>{TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-            <div className="prop"><span>形式</span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]} onChange={f => { s.fmt = f; if (f === 'mp4' && s.bg === 'transparent') s.bg = '#000000'; changed(); }} /></div>
+            <div className="prop"><span>形式</span><Seg id="gFmt" disabled={sns} value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]} onChange={f => { s.fmt = f; if (f === 'mp4' && s.bg === 'transparent') s.bg = '#000000'; changed(); }} /></div>
           </div>
           <div className="sec">
-            <div className="prop"><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
+            {SNS_SERVICES.map(([svc, label]) => (
+              <div key={svc} className="prop" hidden={!sns}><span>{label}</span>
+                <Toggles id={'gSns-' + svc} values={s.sns} options={SNS_VIDEO.filter(x => x.svc === svc).map(x => [x.id, x.ratio])} onToggle={id => { s.sns = toggleId(s.sns, id); snsPreviewSize(); changed(); }} /></div>
+            ))}
+            <div className="prop" hidden={sns}><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
               onDraft={num('w', val => { const w = Math.max(1, Math.min(4096, Math.round(val))); s.w = w; lockFromW(); return w; })} />px</span></div>
-            <div className="prop"><span>高さ</span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
+            <div className="prop" hidden={sns}><span>高さ</span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
               onDraft={num('h', val => { const h = Math.max(1, Math.min(4096, Math.round(val))); if (s.lock && s.sh) s.w = Math.max(1, Math.round(h * s.sw / s.sh)); return h; })} />px <button className="lock" id="gLock" aria-pressed={s.lock} title="縦横比を固定" onClick={() => { s.lock = !s.lock; lockFromW(); changed(); }}><svg width="12" height="12" viewBox="0 0 12 12"><path d="M5 7 7 5M4.2 5.4 3 6.6a2 2 0 0 0 2.8 2.8L7 8.2M7.8 6.6 9 5.4A2 2 0 0 0 6.2 2.6L5 3.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg></button></span></div>
             <div className="prop" id="gFitRow" hidden={fitHidden}><span>合わせ方</span><Seg id="gFit" value={s.fit} options={[['cover', '切り抜き'], ['contain', '余白']]} onChange={f => { s.fit = f; changed(); }} /></div>
             <div className="prop" id="gBgRow" hidden={bgHidden}><span>背景</span><Seg id="gBg" value={s.bg} options={[['transparent', '透明'], ['#000000', '黒'], ['#ffffff', '白']]} hiddenValues={s.fmt === 'mp4' ? ['transparent'] : []} onChange={b => { s.bg = b; changed(); }} /></div>

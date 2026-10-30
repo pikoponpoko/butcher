@@ -4,10 +4,11 @@ import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import { type Doc, type Node, type Slice, type Snap, SRC_RE, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
+import { SNS_DEFAULT } from '../sns';
 
 export type Pane = 'layer' | 'slice';
 const INIT: Settings = {
-  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', px: '1080', basis: 'canvas', trim: true,
+  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', sns: SNS_DEFAULT, snsFit: 'contain', px: '1080', basis: 'canvas', trim: true,
   prefix: '', suffix: '', hidden: false, tree: true, slFill: true, allFiles: false, incWarn: false, out: 'zip',
 };
 

@@ -2,9 +2,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as RPointerEvent } from 'react';
 import * as PsdCore from '../../core/psdcore';
 import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe, nameOf, nextSliceName, newSliceId, pathOf, thumbOf } from './model';
-import { toCanvas } from './exporter';
+import { toCanvas, variantsOf } from './exporter';
+import { SNS_IMAGE, SNS_SERVICES, toggleId } from '../sns';
 import type { ImageTool } from './useImageTool';
-import { DraftInput, Seg, StatusText } from '../ui';
+import { DraftInput, Seg, StatusText, Toggles } from '../ui';
 
 const ICON = {
   chev: <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>,
@@ -293,7 +294,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
 
 // ---------- right: export settings
 export function Inspector({ t }: { t: ImageTool }) {
-  const { o, set } = t, layer = t.pane === 'layer';
+  const { o, set } = t, layer = t.pane === 'layer', sns = o.size === 'sns', perTarget = variantsOf(o).length;
   const sw = (id: string, key: 'trim' | 'hidden' | 'tree' | 'slFill' | 'allFiles' | 'incWarn', label: ReactNode, cls?: string, hidden?: boolean, onToggle?: () => void) => (
     <label className={'sw' + (cls ? ' ' + cls : '')} htmlFor={id} hidden={hidden}>{label}<input id={id} type="checkbox" checked={o[key]} onChange={e => { set(key, e.target.checked); onToggle?.(); }} /></label>
   );
@@ -302,12 +303,17 @@ export function Inspector({ t }: { t: ImageTool }) {
       <div className="insp">
         <div className="sec">
           <div className="prop pair nl lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
-          <div className="prop pair nl"><span>形式</span><Seg id="fmt" value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']]} onChange={v => set('fmt', v)} /></div>
-          <label className="prop" htmlFor="quality" id="qualityRow" hidden={o.fmt === 'png'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
+          <div className="prop pair nl"><span>形式</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']]} onChange={v => set('fmt', v)} /></div>
+          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns ? !o.sns.some(id => id.startsWith('ig-')) : o.fmt === 'png'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec">
-          <div className="prop pair"><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ']]} onChange={v => set('size', v)} /></div>
-          <div className="prop" id="sizeRow" hidden={o.size === 'orig'}><span></span><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
+          <div className="prop pair"><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ'], ['sns', 'SNS']]} onChange={v => set('size', v)} /></div>
+          {SNS_SERVICES.map(([svc, label]) => (
+            <div key={svc} className="prop sns" hidden={!sns}><span>{label}</span>
+              <Toggles id={'sns-' + svc} values={o.sns} options={SNS_IMAGE.filter(x => x.svc === svc).map(x => [x.id, x.ratio])} onToggle={id => set('sns', toggleId(o.sns, id))} /></div>
+          ))}
+          <div className="prop sns" hidden={!sns}><span>合わせ方</span><Seg id="snsFit" value={o.snsFit} options={[['contain', '余白'], ['cover', '切り抜き']]} onChange={v => set('snsFit', v)} /></div>
+          <div className="prop" id="sizeRow" hidden={o.size === 'orig' || sns}><span></span><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
             <select id="basis" aria-label="基準" style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">キャンバス</option><option value="image">画像ごと</option></select></span></div>
           {sw('trim', 'trim', <span>余白カット</span>, 'prop pair lp', !layer)}
         </div>
@@ -323,7 +329,7 @@ export function Inspector({ t }: { t: ImageTool }) {
         </div>
       </div>
       <div className="foot">
-        <div className="sumrow"><span id="sum" className="num">{`${t.summary.n} ファイル`}{t.summary.w > 0 && <> · <span className="warn">{`警告あり ${t.summary.w}`}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
+        <div className="sumrow"><span id="sum" className="num">{`${t.summary.n * perTarget} ファイル`}{t.summary.w > 0 && <> · <span className="warn">{`警告あり ${t.summary.w}`}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
         {sw('incWarn', 'incWarn', '警告のある画像も書き出す', undefined, !t.summary.w)}
         <div className="act">
           <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', '個別'], ['dir', 'フォルダ']]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
