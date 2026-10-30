@@ -106,10 +106,21 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
   const fileRef = useRef<HTMLInputElement>(null), nameRef = useRef<HTMLInputElement>(null);
   const layer = t.pane === 'layer', d = t.doc, s = curSlice(d);
   const selAll = () => { if (!d) return; t.edit(() => (function a(ch?: Node[]) { for (const n of ch || []) { d.checked.add(n._id); a(n.children); } })(d.psd.children)); };
+  // small screens: the selected tab folds/unfolds the panel, the other tab switches and unfolds
+  const pickPane = (v: 'layer' | 'slice') => {
+    if (v !== t.pane) { t.setPane(v); setFold(false); }
+    else if (matchMedia('(max-width: 1100px)').matches) setFold(!fold);
+  };
+  // the panel sits below the preview there, so unfolding opens downward; bring the opened list into view
+  const asideRef = useRef<HTMLElement>(null), wasFold = useRef(fold);
+  useEffect(() => {
+    if (wasFold.current && !fold) asideRef.current!.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    wasFold.current = fold;
+  }, [fold]);
   return (
-    <aside className="panel layers" aria-label="レイヤー">
+    <aside ref={asideRef} className="panel layers" aria-label="レイヤー">
       <div className="ph">
-        <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={t.setPane} />
+        <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={pickPane} />
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
         <span className="sp" hidden={layer}><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
