@@ -76,12 +76,17 @@ function SliceList({ t, nameRef }: { t: ImageTool; nameRef: RefObject<HTMLInputE
 
 function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice; round: boolean; setRound: (v: boolean) => void; nameRef: RefObject<HTMLInputElement | null> }) {
   const d = t.doc!;
+  // X/Y are the slice center; W/H resize around the center fixed when the field gained focus
+  const c = useRef({ x: 0, y: 0 });
   const num = (key: 'x' | 'y' | 'w' | 'h') => (v: string) => {
-    const n = Math.round(+v); if (!isFinite(n) || v === '') return;
-    s[key] = n; clampSlice(s, d.psd.width, d.psd.height); t.sliceChanged();
+    const n = +v; if (!isFinite(n) || v === '') return;
+    if (key === 'x' || key === 'y') { c.current[key] = n; s[key] = Math.round(n - (key === 'x' ? s.w : s.h) / 2); }
+    else { s[key] = Math.round(n); if (key === 'w') s.x = Math.round(c.current.x - s.w / 2); else s.y = Math.round(c.current.y - s.h / 2); }
+    clampSlice(s, d.psd.width, d.psd.height); t.sliceChanged();
   };
+  const val = { x: s.x + s.w / 2, y: s.y + s.h / 2, w: s.w, h: s.h };
   return (
-    <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') t.begin(); }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
+    <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') { c.current = { x: s.x + s.w / 2, y: s.y + s.h / 2 }; t.begin(); } }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
       <div className="r">
         <input ref={nameRef} id="sName" type="text" aria-label="スライス名" value={s.name}
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
@@ -94,7 +99,7 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
         {(['x', 'y', 'w', 'h'] as const).map(k => (
           <Fragment key={k}>
             <span>{k.toUpperCase()}</span>
-            <DraftInput id={'s' + k.toUpperCase()} className="n" type="number" min={k === 'w' || k === 'h' ? 1 : undefined} value={s[k]} onDraft={num(k)} />
+            <DraftInput id={'s' + k.toUpperCase()} className="n" type="number" min={k === 'w' || k === 'h' ? 1 : undefined} step={k === 'x' || k === 'y' ? 0.5 : undefined} value={val[k]} onDraft={num(k)} />
           </Fragment>
         ))}
       </div>
@@ -269,6 +274,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
               <div key={s.id} className={'sr' + (s.id === d.sliceSel ? ' sel' : '') + (s.on ? '' : ' off')} data-id={s.id}
                 style={{ left: s.x * k + 'px', top: s.y * k + 'px', width: s.w * k + 'px', height: s.h * k + 'px' }}>
                 <b>{s.name}</b>
+                {s.id === d.sliceSel && <i className="ct" />}
                 {s.id === d.sliceSel && HANDLES.map(h => (
                   <i key={h} className="hd" data-h={h} style={{ left: (h.includes('w') ? 0 : h.includes('e') ? 100 : 50) + '%', top: (h.includes('n') ? 0 : h.includes('s') ? 100 : 50) + '%', cursor: h + '-resize' }} />
                 ))}
@@ -283,7 +289,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       </div>
       <div className="status">
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
-        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x} y${sc.y}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : '空') + `  ${pv.ms}ms` : ''}</span>
+        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : '空') + `  ${pv.ms}ms` : ''}</span>
         <span id="pvState">{pv && (ws.length ? <span className="warn">{`警告 ${ws.length}`}</span> : <span className="ok">警告なし</span>)}</span>
         <button className="link" id="saveOne" onClick={t.saveOne}>保存</button>
       </div>
