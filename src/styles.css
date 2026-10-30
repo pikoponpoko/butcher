@@ -48,8 +48,8 @@ button, select, input { font: inherit; color: inherit; }
 .ph b { color: var(--fg); font-weight: 600; margin-right: auto; }
 .link { border: 0; background: none; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; box-sizing: border-box; height: 21px; padding: 0 4px; line-height: 1; border-radius: 4px; }
 .link:hover { color: var(--fg); background: var(--field); }
-.fold { display: none; flex: none; width: 21px; justify-content: center; padding: 0; }
-.fold svg { transition: transform .12s; transform: rotate(180deg); } .app.folded .fold svg { transform: none; }
+.fold { display: none; flex: none; width: 44px; height: 31px; margin-right: -8px; border-radius: 0; justify-content: center; padding: 0; }
+.fold svg { width: 14px; height: 14px; transition: transform .12s; transform: rotate(180deg); } .app.folded .fold svg { transform: none; }
 
 .tree { overflow: auto; flex: 1; padding: 4px 0; }
 .row { display: flex; align-items: center; gap: 6px; height: 34px; padding-right: 8px; cursor: pointer; white-space: nowrap; }
