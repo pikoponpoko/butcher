@@ -185,7 +185,10 @@ button, select, input { font: inherit; color: inherit; }
   .fold { display: inline-flex; }
   .insp .sec { display: flex; flex-wrap: wrap; align-content: start; column-gap: 16px; }
   .insp .sec > * { flex: 1 0 100%; }
-  .insp .sec > .prop.pair { flex: 0 0 auto; grid-template-columns: auto auto; }
+  .insp .sec > .prop.pair { flex: 1 1 auto; grid-template-columns: auto minmax(0, 1fr); }
+  .insp .sec > .prop.pair.sw { flex: 0 0 auto; grid-template-columns: auto auto; }
+  .insp .sec > .prop.pair > .seg { display: flex; width: auto; justify-self: stretch; }
+  .insp .sec > .prop.pair > .seg button { flex: 1 1 auto; }
   .insp .sec > .prop.pair.nl .seg button { padding: 0 7px; }
   #sizeRow { order: 1; }
   #sizeRow, #qualityRow { grid-template-columns: 36px auto 1fr; }
@@ -206,7 +209,10 @@ button, select, input { font: inherit; color: inherit; }
   .insp { grid-template-columns: minmax(0, 1fr); }
   .insp .sec { border-right: 0; }
   .insp .sec > .prop.pair.nl > span:first-child { display: none; }
-  .insp .sec > .prop.pair.nl { grid-template-columns: auto; }
+  .insp .sec > .prop.pair.nl { grid-template-columns: minmax(0, 1fr); }
   .insp .sec { column-gap: 12px; }
+  .act > .seg { display: flex; flex: 1 1 auto; width: auto; }
+  .act > .seg button { flex: 1 1 auto; }
+  .act > .btn { flex: 1 1 0; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
