@@ -10,6 +10,9 @@ const ICON = {
   chev: <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>,
   eye: <svg width="14" height="10" viewBox="0 0 14 10"><path d="M1 5c1.6-2.7 3.6-4 6-4s4.4 1.3 6 4c-1.6 2.7-3.6 4-6 4S2.6 7.7 1 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /><circle cx="7" cy="5" r="1.8" fill="currentColor" /></svg>,
   eyeOff: <svg width="14" height="10" viewBox="0 0 14 10"><path d="M1 5c1.6-2.7 3.6-4 6-4s4.4 1.3 6 4c-1.6 2.7-3.6 4-6 4S2.6 7.7 1 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M2 9 12 1" stroke="currentColor" strokeWidth="1.2" /></svg>,
+  auto: <svg width="13" height="13" viewBox="0 0 13 13"><path d="M1.5 1.5h10v4.25h-10ZM1.5 7.25h10v4.25h-10Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
+  open: <svg width="14" height="12" viewBox="0 0 14 12"><path d="M1 10.5V1.5h4l1.2 1.5H12v2M1 10.5l2-5h10.2l-2 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>,
+  save: <svg width="12" height="13" viewBox="0 0 12 13"><path d="M6 1v7.5M3 5.5l3 3 3-3M1 9v3h10V9" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
   folder: <svg width="18" height="14" viewBox="0 0 18 14"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4l1.5 2h7.5A1.5 1.5 0 0 1 17 4.5v7A1.5 1.5 0 0 1 15.5 13h-13A1.5 1.5 0 0 1 1 11.5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
 };
 const collapsed = new WeakSet<Node>();
@@ -111,7 +114,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={t.setPane} />
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
-        <span className="sp" hidden={layer}><button className="link" id="slAuto" onClick={t.autoSlice}>自動</button><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
+        <span className="sp" hidden={layer}><button className="link ic" id="slAuto" aria-label="自動" title="自動" onClick={t.autoSlice}>{ICON.auto}</button><button className="link ic" id="slLoad" aria-label="読込" title="読込" onClick={() => fileRef.current!.click()}>{ICON.open}</button><button className="link ic" id="slSave" aria-label="保存" title="保存" onClick={t.saveSlices}>{ICON.save}</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
         <button className="link fold" id="fold" aria-label={fold ? '開く' : '畳む'} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
       </div>
