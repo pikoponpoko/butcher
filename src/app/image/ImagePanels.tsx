@@ -3,7 +3,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import * as PsdCore from '../../core/psdcore';
 import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe, nameOf, nextSliceName, newSliceId, pathOf, thumbOf } from './model';
 import { toCanvas, variantsOf } from './exporter';
-import { SNS_IMAGE, SNS_SERVICES, toggleId } from '../sns';
+import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
 import { DraftInput, Seg, StatusText, Toggles } from '../ui';
 
@@ -294,7 +294,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
 
 // ---------- right: export settings
 export function Inspector({ t }: { t: ImageTool }) {
-  const { o, set } = t, layer = t.pane === 'layer', sns = o.size === 'sns', perTarget = variantsOf(o).length;
+  const { o, set } = t, layer = t.pane === 'layer', g = o.size === 'sns' || o.size === 'wp' ? o.size : null, sns = g === 'sns', perTarget = variantsOf(o).length;
   const sw = (id: string, key: 'trim' | 'hidden' | 'tree' | 'slFill' | 'allFiles' | 'incWarn', label: ReactNode, cls?: string, hidden?: boolean, onToggle?: () => void) => (
     <label className={'sw' + (cls ? ' ' + cls : '')} htmlFor={id} hidden={hidden}>{label}<input id={id} type="checkbox" checked={o[key]} onChange={e => { set(key, e.target.checked); onToggle?.(); }} /></label>
   );
@@ -304,17 +304,17 @@ export function Inspector({ t }: { t: ImageTool }) {
         <div className="sec">
           <div className="prop pair nl lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
           <div className="prop pair nl"><span>形式</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']]} onChange={v => set('fmt', v)} /></div>
-          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns ? !o.sns.some(id => id.startsWith('ig-')) : o.fmt === 'png'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
+          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns ? !variantsOf(o).some(v => v?.svc === 'ig') : o.fmt === 'png'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec">
-          <div className="prop pair"><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ'], ['sns', 'SNS']]} onChange={v => set('size', v)} /></div>
-          {SNS_SERVICES.map(([svc, label]) => (
-            <div key={svc} className="prop sns" hidden={!sns}><span>{label}</span>
-              <Toggles id={'sns-' + svc} values={o.sns} options={SNS_IMAGE.filter(x => x.svc === svc).map(x => [x.id, x.ratio])} onToggle={id => set('sns', toggleId(o.sns, id))} /></div>
-          ))}
-          <div className="prop sns" hidden={!sns}><span>合わせ方</span><Seg id="snsFit" value={o.snsFit} options={[['contain', '余白'], ['cover', '切り抜き']]} onChange={v => set('snsFit', v)} /></div>
-          <div className="prop" id="sizeRow" hidden={o.size === 'orig' || sns}><span></span><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
+          <div className="prop pair"><span>サイズ</span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', '原寸'], ['w', '指定'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={v => set('size', v)} /></div>
+          <div className="prop" id="sizeRow" hidden={o.size !== 'w' && o.size !== 'h'}><select id="side" aria-label="基準の辺" value={o.size} onChange={e => set('size', e.target.value as 'w')}><option value="w">幅</option><option value="h">高さ</option></select><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
             <select id="basis" aria-label="基準" style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">キャンバス</option><option value="image">画像ごと</option></select></span></div>
+          {g && SERVICES[g].map(([svc, label]) => (
+            <div key={svc} className="prop ps"><span>{label}</span>
+              <Toggles id={'ps-' + svc} values={o.picks} options={IMAGE_PRESETS.filter(x => x.svc === svc).map(x => [x.id, x.label])} onToggle={id => set('picks', toggleId(o.picks, id))} /></div>
+          ))}
+          {g && <div className="prop ps"><span>合わせ方</span><Seg id="fit" value={o.fits[g]} options={[['contain', '余白'], ['cover', '切り抜き']]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
           {sw('trim', 'trim', <span>余白カット</span>, 'prop pair lp', !layer)}
         </div>
         <div className="sec">

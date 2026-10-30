@@ -2,11 +2,11 @@
 import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
 import { saveBlob, saveFailText } from '../save';
-import { type SnsSize, SNS_IMAGE, snsImageExt, snsPicked } from '../sns';
+import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
-  mode: Mode; fmt: 'png' | 'jpeg' | 'webp'; quality: string; size: 'orig' | 'w' | 'h' | 'sns'; sns: string[]; snsFit: 'cover' | 'contain'; px: string; basis: 'canvas' | 'image'; trim: boolean;
+  mode: Mode; fmt: 'png' | 'jpeg' | 'webp'; quality: string; size: 'orig' | 'w' | 'h' | Group; picks: string[]; fits: Record<Group, Fit>; px: string; basis: 'canvas' | 'image'; trim: boolean;
   prefix: string; suffix: string; hidden: boolean; tree: boolean; slFill: boolean; allFiles: boolean; incWarn: boolean; out: 'zip' | 'each' | 'dir';
 }
 // Status line in the inspector footer: plain text or colored parts.
@@ -61,25 +61,25 @@ function borderColor(c: HTMLCanvasElement, x: number, y: number, w: number, h: n
   let best: number[] | null = null; for (const b of bins.values()) if (!best || b[3] > best[3]) best = b;
   return `rgb(${Math.round(best![0] / best![3])},${Math.round(best![1] / best![3])},${Math.round(best![2] / best![3])})`;
 }
-async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null, sns?: SnsSize | null) {
+async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null, ps?: Preset | null) {
   let c = toCanvas(rgba, W, H), x = 0, y = 0, w = W, h = H;
   if (crop) { c = toCanvas(cropPixels(rgba, W, H, crop, o.slFill), crop.w, crop.h); w = crop.w; h = crop.h; }
   else if (o.trim) { const b = PsdCore.alphaBounds(rgba, W, H); if (!b) return null; ({ x, y, w, h } = b); }
-  const fmt = sns ? (snsImageExt(sns) === 'jpg' ? 'jpeg' : 'png') : o.fmt;
+  const fmt = ps ? fmtOf(o, ps) : o.fmt, fit = ps && o.fits[ps.group];
   const out = document.createElement('canvas'), ctx = out.getContext('2d')!;
   let dx = 0, dy = 0, dw: number, dh: number;
-  if (sns) {
+  if (ps) {
     // cover crops the center; contain pads with the image's border color (transparent when the border is)
-    out.width = sns.w; out.height = sns.h;
-    const k = o.snsFit === 'cover' ? Math.max(sns.w / w, sns.h / h) : Math.min(sns.w / w, sns.h / h);
-    dw = w * k; dh = h * k; dx = (sns.w - dw) / 2; dy = (sns.h - dh) / 2;
+    out.width = ps.w; out.height = ps.h;
+    const k = fit === 'cover' ? Math.max(ps.w / w, ps.h / h) : Math.min(ps.w / w, ps.h / h);
+    dw = w * k; dh = h * k; dx = (ps.w - dw) / 2; dy = (ps.h - dh) / 2;
   } else {
     const px = Math.max(1, +o.px || 1);
     const s = o.size === 'orig' ? 1 : o.basis === 'canvas' ? px / (o.size === 'w' ? W : H) : px / (o.size === 'w' ? w : h);
     out.width = dw = Math.max(1, Math.round(w * s)); out.height = dh = Math.max(1, Math.round(h * s));
   }
   ctx.imageSmoothingQuality = 'high';
-  const pad = sns && o.snsFit === 'contain' ? borderColor(c, x, y, w, h) : null;
+  const pad = fit === 'contain' ? borderColor(c, x, y, w, h) : null;
   if (fmt === 'jpeg' || pad) { ctx.fillStyle = pad || '#ffffff'; ctx.fillRect(0, 0, out.width, out.height); }
   ctx.drawImage(c, x, y, w, h, dx, dy, dw, dh);
   const q = Math.min(100, Math.max(1, +o.quality || 90)) / 100;
@@ -90,10 +90,12 @@ async function writeTo(dir: FileSystemDirectoryHandle, path: string, blob: Blob)
   for (const p of parts) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(file, { create: true })).createWritable(); await w.write(blob); await w.close();
 }
-const extOf = (o: Settings, v?: SnsSize | null) => v ? snsImageExt(v) : o.fmt === 'jpeg' ? 'jpg' : o.fmt;
-// One entry per file written for each target: the SNS sizes, or the plain export.
-export const variantsOf = (o: Settings): (SnsSize | null)[] => o.size === 'sns' ? snsPicked(SNS_IMAGE, o.sns) : [null];
-const tagOf = (v: SnsSize | null) => v ? '_' + v.id : '';
+// Presets: SNS files are PNG for X and JPEG for Instagram; wallpapers use the chosen format.
+const fmtOf = (o: Settings, v: Preset) => v.group === 'sns' ? v.svc === 'ig' ? 'jpeg' : 'png' : o.fmt;
+const extOf = (o: Settings, v?: Preset | null) => { const f = v ? fmtOf(o, v) : o.fmt; return f === 'jpeg' ? 'jpg' : f; };
+// One entry per file written for each target: the checked preset sizes, or the plain export.
+export const variantsOf = (o: Settings): (Preset | null)[] => o.size === 'sns' || o.size === 'wp' ? picked(IMAGE_PRESETS, o.size, o.picks) : [null];
+const tagOf = (v: Preset | null) => v ? '_' + v.id : '';
 
 export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice | null): Promise<Status> {
   const r = renderNode(d, n, o.hidden);

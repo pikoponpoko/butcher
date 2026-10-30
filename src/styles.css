@@ -163,6 +163,8 @@ button, select, input { font: inherit; color: inherit; }
 .gif .prop input.n { width: 72px; }
 .gif .prop { grid-template-columns: 80px auto 1fr; }
 .gif .prop select { max-width: 176px; }
+.gif .prop.use { grid-template-columns: minmax(0, 1fr); }
+.gif .prop.use .seg { display: flex; width: auto; justify-self: stretch; } .gif .prop.use .seg button { flex: 1 1 auto; padding: 0 6px; }
 .lock { border: 1px solid var(--line); background: var(--field); border-radius: 5px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; color: var(--muted); cursor: pointer; }
 .lock[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .prop .unit select { height: 24px; }
@@ -193,8 +195,8 @@ button, select, input { font: inherit; color: inherit; }
   .insp .sec > .prop.pair > .seg { display: flex; width: auto; justify-self: stretch; }
   .insp .sec > .prop.pair > .seg button { flex: 1 1 auto; }
   .insp .sec > .prop.pair.nl .seg button { padding: 0 7px; }
-  #sizeRow, .prop.sns { order: 1; }
-  #sizeRow, #qualityRow { grid-template-columns: 36px auto 1fr; }
+  #sizeRow, .prop.ps { order: 1; }
+  #qualityRow { grid-template-columns: 36px auto 1fr; }
   .insp .sec > .prop.pair.fill { flex: 1 1 0; min-width: 0; grid-template-columns: auto minmax(0, 1fr); }
   .prop.pair.fill input.t { width: 100%; min-width: 0; }
   .app.folded { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px auto auto auto; grid-template-areas: "bar" "center" "layers" "insp"; }
