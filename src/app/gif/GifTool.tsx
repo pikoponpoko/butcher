@@ -41,7 +41,7 @@ type G = ReturnType<typeof initState>;
 export interface GifToolApi { open(f: File): void }
 export const isVideo = (f: File) => /^video\//.test(f.type) || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
 
-export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi> }) {
+export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<GifToolApi>; onPick: () => void }) {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const g = useRef<G>(null as unknown as G); if (!g.current) g.current = initState();
   const s = g.current;
@@ -294,11 +294,11 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   return (
     <section className="gif" id="gif">
       <main className="center" style={{ display: 'flex' }}>
-        <div className="stage" id="gStage" ref={stageRef}>
+        <div className={'stage' + (s.v ? '' : ' pick')} id="gStage" ref={stageRef} onClick={s.v ? undefined : onPick}>
           <canvas id="gPv" ref={pv} width="1" height="1" hidden={show !== 'pv' || !s.v} style={box} />
           <img id="gResI" alt="" hidden={show !== 'i' || !s.v} style={box} src={show === 'i' ? s.resUrl : undefined} />
           <video id="gResV" ref={resV} muted loop playsInline hidden={show !== 'v' || !s.v} style={box} src={s.fmt === 'mp4' && s.resUrl ? s.resUrl : undefined} />
-          <span className="gempty" id="gEmpty" hidden={s.v}>動画をドロップ</span>
+          <span className="gempty" id="gEmpty" hidden={s.v}><span className="fine">動画をドロップ</span><span className="coarse">動画を選択</span></span>
         </div>
         <div className="tl">
           <button className="play" id="gPlay" aria-label={v.paused ? '再生' : '停止'} onClick={() => setPlaying(v.paused)}>{playIcon}</button>

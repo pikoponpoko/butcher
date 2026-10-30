@@ -52,6 +52,9 @@ export function App() {
     return () => { removeEventListener('dragenter', enter); removeEventListener('dragover', over); removeEventListener('drop', drop); };
   }, []);
 
+  const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null);
+  const pickVideo = () => gFileRef.current!.click();
+
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '')}>
       <header className="bar">
@@ -63,16 +66,16 @@ export function App() {
           <select id="sample" className="img-only" aria-label="サンプル" value={sample} onChange={e => { setSample(e.target.value); t.openSample(e.target.value); }}>
             {SAMPLES.map(k => <option key={k} value={k}>{k}</option>)}
           </select>
-          <label className="btn img-only" htmlFor="file">開く</label>
-          <label className="btn gif-only" htmlFor="gFile">開く</label>
-          <input id="gFile" type="file" accept="video/*,.mp4,.webm,.mov,.m4v" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
-          <input id="file" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple hidden onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
+          <button className="btn img-only" onClick={() => fileRef.current!.click()}>開く</button>
+          <button className="btn gif-only" onClick={pickVideo}>開く</button>
+          <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
+          <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
         </div>
       </header>
       <LayersPanel t={t} round={round} setRound={setRound} fold={fold} setFold={setFold} />
       <Stage t={t} round={round} />
       <Inspector t={t} />
-      <GifTool active={tool === 'gif'} ref={gif} />
+      <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} />
     </div>
   );
 }
