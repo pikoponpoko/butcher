@@ -305,7 +305,7 @@ export function Inspector({ t }: { t: ImageTool }) {
           <div className="prop pair nl"><span>形式</span><Seg id="fmt" value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
           <label className="prop" htmlFor="quality" id="qualityRow" hidden={o.fmt === 'png' || o.fmt === 'ico'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
-        <div className="sec">
+        <div className="sec" hidden={ico && !layer}>
           <div className="prop pair" hidden={ico}><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ']]} onChange={v => set('size', v)} /></div>
           <div className="prop" id="sizeRow" hidden={o.size === 'orig' || ico}><span></span><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
             <select id="basis" aria-label="基準" style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">キャンバス</option><option value="image">画像ごと</option></select></span></div>
