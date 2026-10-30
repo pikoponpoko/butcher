@@ -6,7 +6,14 @@ import { readClip } from '../core/clipreader';
 import { GifTool } from './giftool.js';
 import { saveBlob } from './save.js';
 
-const SAMPLES = ['01_normal_layers.psd', '02_multiple_folders.psd', '03_nested_folders.psd', '04_masks.psd', '05_clipping.psd', '06_blend_modes.psd'];
+// Test PSDs (samples/), each inlined into its own chunk loaded on first selection.
+const SAMPLE_FILES = import.meta.glob('../../samples/*.psd', { query: '?inline', import: 'default' });
+const SAMPLES = Object.keys(SAMPLE_FILES).map(k => k.split('/').pop());
+async function sampleBuf(k) {
+  const b = atob((await SAMPLE_FILES[`../../samples/${k}`]()).split(',')[1]), u = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+  return u.buffer;
+}
 const WARN_JA = {
   effects: 'レイヤー効果は描画されません', adjustment: '調整レイヤーは適用されません', blendIf: 'ブレンド条件は適用されません',
   knockout: 'ノックアウトは適用されません', vectorMask: 'ベクトルマスクは適用されません', smartFilter: 'スマートフィルターは保存済みの画像を使用',
@@ -463,5 +470,5 @@ addEventListener('dragover', e => e.preventDefault());
 addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
 addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const vid = [...(e.dataTransfer?.files || [])].find(f => GifTool.isVideo(f)); if (vid) { setTool('gif'); GifTool.open(vid); return; } const fs = [...(e.dataTransfer?.files || [])].filter(f => SRC_RE.test(f.name)); if (fs.length) openFiles(fs); });
 for (const k of SAMPLES) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('sample').append(o); }
-$('sample').onchange = async () => { const k = $('sample').value; const i = st.docs.findIndex(d => d.name === k); if (i >= 0) st.cur = i; else loadPsd(k, await (await fetch(`${import.meta.env.BASE_URL}samples/${k}`)).arrayBuffer()); st.sel = null; renderAll(); };
+$('sample').onchange = async () => { const k = $('sample').value; const i = st.docs.findIndex(d => d.name === k); if (i >= 0) st.cur = i; else loadPsd(k, await sampleBuf(k)); st.sel = null; renderAll(); };
 $('sample').value = '02_multiple_folders.psd'; $('sample').onchange();

@@ -11,7 +11,7 @@ initializeCanvas(
   (width, height) => ({ width, height, data: new Uint8ClampedArray(width * height * 4), colorSpace: 'srgb' }) as ImageData,
 );
 
-export const SAMPLE_DIR = fileURLToPath(new URL('../public/samples/', import.meta.url));
+export const SAMPLE_DIR = fileURLToPath(new URL('../samples/', import.meta.url));
 export const samples = () => readdirSync(SAMPLE_DIR).filter(f => f.endsWith('.psd')).sort();
 
 export function loadSample(name: string): PsdDoc {
