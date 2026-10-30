@@ -1,0 +1,427 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`01_normal_layers.psd > every layer and folder export is unchanged 1`] = `
+[
+  {
+    "bounds": {
+      "h": 160,
+      "w": 160,
+      "x": 170,
+      "y": 70,
+    },
+    "kind": "layer",
+    "path": "b",
+    "sha": "e01af215f845d894",
+  },
+  {
+    "bounds": {
+      "h": 160,
+      "w": 160,
+      "x": 70,
+      "y": 70,
+    },
+    "kind": "layer",
+    "path": "a",
+    "sha": "69b8c73030f0ff15",
+  },
+  {
+    "bounds": {
+      "h": 300,
+      "w": 400,
+      "x": 0,
+      "y": 0,
+    },
+    "kind": "layer",
+    "path": "back",
+    "sha": "fd3df91fd84ccf15",
+  },
+]
+`;
+
+exports[`02_multiple_folders.psd > every layer and folder export is unchanged 1`] = `
+[
+  {
+    "bounds": {
+      "h": 200,
+      "w": 160,
+      "x": 150,
+      "y": 60,
+    },
+    "kind": "folder",
+    "path": "Character_B",
+    "sha": "e0caffdcafd402a9",
+  },
+  {
+    "bounds": {
+      "h": 60,
+      "w": 60,
+      "x": 200,
+      "y": 80,
+    },
+    "kind": "layer",
+    "path": "Character_B/eyes",
+    "sha": "a0c97da99238d6eb",
+  },
+  {
+    "bounds": {
+      "h": 200,
+      "w": 160,
+      "x": 150,
+      "y": 60,
+    },
+    "kind": "layer",
+    "path": "Character_B/body",
+    "sha": "3d42c938833b05ca",
+  },
+  {
+    "bounds": {
+      "h": 185,
+      "w": 140,
+      "x": 40,
+      "y": 75,
+    },
+    "kind": "folder",
+    "path": "Character_A",
+    "sha": "37c575e64f46f146",
+  },
+  {
+    "bounds": {
+      "h": 50,
+      "w": 50,
+      "x": 85,
+      "y": 75,
+    },
+    "kind": "layer",
+    "path": "Character_A/eyes",
+    "sha": "2bf58ca4336aa40b",
+  },
+  {
+    "bounds": {
+      "h": 40,
+      "w": 40,
+      "x": 90,
+      "y": 120,
+    },
+    "kind": "layer",
+    "path": "Character_A/mouth",
+    "sha": "0c6a255c05924525",
+  },
+  {
+    "bounds": {
+      "h": 180,
+      "w": 140,
+      "x": 40,
+      "y": 80,
+    },
+    "kind": "layer",
+    "path": "Character_A/body",
+    "sha": "48304e811930f21e",
+  },
+]
+`;
+
+exports[`03_nested_folders.psd > every layer and folder export is unchanged 1`] = `
+[
+  {
+    "bounds": {
+      "h": 200,
+      "w": 160,
+      "x": 150,
+      "y": 60,
+    },
+    "kind": "folder",
+    "path": "Character_B",
+    "sha": "e0caffdcafd402a9",
+  },
+  {
+    "bounds": {
+      "h": 60,
+      "w": 60,
+      "x": 200,
+      "y": 80,
+    },
+    "kind": "layer",
+    "path": "Character_B/eyes",
+    "sha": "a0c97da99238d6eb",
+  },
+  {
+    "bounds": {
+      "h": 200,
+      "w": 160,
+      "x": 150,
+      "y": 60,
+    },
+    "kind": "layer",
+    "path": "Character_B/body",
+    "sha": "3d42c938833b05ca",
+  },
+  {
+    "bounds": {
+      "h": 300,
+      "w": 400,
+      "x": 0,
+      "y": 0,
+    },
+    "kind": "folder",
+    "path": "Scene",
+    "sha": "f2c9c85f87d80188",
+  },
+  {
+    "bounds": {
+      "h": 185,
+      "w": 140,
+      "x": 40,
+      "y": 75,
+    },
+    "kind": "folder",
+    "path": "Scene/Character_A",
+    "sha": "268e18b964fe1feb",
+  },
+  {
+    "bounds": {
+      "h": 50,
+      "w": 50,
+      "x": 85,
+      "y": 75,
+    },
+    "kind": "folder",
+    "path": "Scene/Character_A/Face",
+    "sha": "2bf58ca4336aa40b",
+  },
+  {
+    "bounds": {
+      "h": 50,
+      "w": 50,
+      "x": 85,
+      "y": 75,
+    },
+    "kind": "layer",
+    "path": "Scene/Character_A/Face/eyes",
+    "sha": "2bf58ca4336aa40b",
+  },
+  {
+    "bounds": {
+      "h": 180,
+      "w": 140,
+      "x": 40,
+      "y": 80,
+    },
+    "kind": "layer",
+    "path": "Scene/Character_A/body",
+    "sha": "48304e811930f21e",
+  },
+  {
+    "bounds": {
+      "h": 300,
+      "w": 400,
+      "x": 0,
+      "y": 0,
+    },
+    "kind": "folder",
+    "path": "Scene/BG",
+    "sha": "51db190056eeb8ec",
+  },
+  {
+    "bounds": {
+      "h": 150,
+      "w": 400,
+      "x": 0,
+      "y": 150,
+    },
+    "kind": "layer",
+    "path": "Scene/BG/ground",
+    "sha": "319785cd9c2a73cc",
+  },
+  {
+    "bounds": {
+      "h": 150,
+      "w": 400,
+      "x": 0,
+      "y": 0,
+    },
+    "kind": "layer",
+    "path": "Scene/BG/sky",
+    "sha": "57e317a75b9e0ec9",
+  },
+]
+`;
+
+exports[`04_masks.psd > every layer and folder export is unchanged 1`] = `
+[
+  {
+    "bounds": {
+      "h": 260,
+      "w": 355,
+      "x": 25,
+      "y": 20,
+    },
+    "kind": "folder",
+    "path": "Masked",
+    "sha": "c053d545ed37dc40",
+  },
+  {
+    "bounds": {
+      "h": 120,
+      "w": 120,
+      "x": 140,
+      "y": 90,
+    },
+    "kind": "layer",
+    "path": "Masked/dot",
+    "sha": "56753ba292c27de4",
+  },
+  {
+    "bounds": {
+      "h": 260,
+      "w": 359,
+      "x": 21,
+      "y": 20,
+    },
+    "kind": "layer",
+    "path": "Masked/red",
+    "sha": "e02e284f689b0ca3",
+  },
+]
+`;
+
+exports[`05_clipping.psd > every layer and folder export is unchanged 1`] = `
+[
+  {
+    "bounds": {
+      "h": 220,
+      "w": 220,
+      "x": 90,
+      "y": 40,
+    },
+    "kind": "folder",
+    "path": "Clipped",
+    "sha": "2e252c16a468e77e",
+  },
+  {
+    "bounds": {
+      "h": 120,
+      "w": 200,
+      "x": 0,
+      "y": 0,
+    },
+    "kind": "layer",
+    "path": "Clipped/light",
+    "sha": "8e4b88669fc2a3c1",
+  },
+  {
+    "bounds": {
+      "h": 300,
+      "w": 200,
+      "x": 200,
+      "y": 0,
+    },
+    "kind": "layer",
+    "path": "Clipped/shade",
+    "sha": "111a6f4f3ab80db3",
+  },
+  {
+    "bounds": {
+      "h": 220,
+      "w": 220,
+      "x": 90,
+      "y": 40,
+    },
+    "kind": "layer",
+    "path": "Clipped/base",
+    "sha": "b958ecf80db9f51b",
+  },
+]
+`;
+
+exports[`06_blend_modes.psd > every layer and folder export is unchanged 1`] = `
+[
+  {
+    "bounds": {
+      "h": 160,
+      "w": 160,
+      "x": 220,
+      "y": 70,
+    },
+    "kind": "folder",
+    "path": "PassThrough",
+    "sha": "14ed2a8057d00445",
+  },
+  {
+    "bounds": {
+      "h": 80,
+      "w": 80,
+      "x": 260,
+      "y": 110,
+    },
+    "kind": "layer",
+    "path": "PassThrough/diff",
+    "sha": "76e0ac50cfc601b6",
+  },
+  {
+    "bounds": {
+      "h": 160,
+      "w": 160,
+      "x": 220,
+      "y": 70,
+    },
+    "kind": "layer",
+    "path": "PassThrough/scr",
+    "sha": "b161e6bb5ea87d65",
+  },
+  {
+    "bounds": {
+      "h": 260,
+      "w": 170,
+      "x": 20,
+      "y": 20,
+    },
+    "kind": "folder",
+    "path": "Isolated",
+    "sha": "cffbe3879c227aca",
+  },
+  {
+    "bounds": {
+      "h": 80,
+      "w": 80,
+      "x": 65,
+      "y": 110,
+    },
+    "kind": "layer",
+    "path": "Isolated/ovl",
+    "sha": "d8313ead6ebca7f3",
+  },
+  {
+    "bounds": {
+      "h": 140,
+      "w": 140,
+      "x": 35,
+      "y": 80,
+    },
+    "kind": "layer",
+    "path": "Isolated/mul",
+    "sha": "40e0947b95d9aa2f",
+  },
+  {
+    "bounds": {
+      "h": 260,
+      "w": 170,
+      "x": 20,
+      "y": 20,
+    },
+    "kind": "layer",
+    "path": "Isolated/base",
+    "sha": "9f96a9cd2387c966",
+  },
+  {
+    "bounds": {
+      "h": 300,
+      "w": 400,
+      "x": 0,
+      "y": 0,
+    },
+    "kind": "layer",
+    "path": "back",
+    "sha": "92a8fdb7bd0b46cc",
+  },
+]
+`;
