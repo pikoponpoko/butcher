@@ -230,7 +230,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const sc = slicing ? curSlice(d) : null;
   return (
     <main className="center">
-      <div className={'stage' + (slicing ? ' slicing' : '')} id="stage" ref={stageRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <div className={'stage' + (slicing ? ' slicing' : '')} id="stage" ref={stageRef} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <div className="cv" style={cvStyle}>
           <canvas id="pv" ref={pvRef} width="1" height="1" style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">
