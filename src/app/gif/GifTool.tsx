@@ -27,13 +27,16 @@ const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
 const SPEEDS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2', '3', '4'];
 const fmtMB = (b: number) => (b / 1048576).toFixed(b < 1048576 * 10 ? 2 : 1) + ' MB';
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+type Rect = { x: number; y: number; w: number; h: number };
 
 function initState() {
   const g = {
     fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, tpl: 'custom',
-    v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
+    v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, crop: null as Rect | null, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
   try { Object.assign(g, JSON.parse(localStorage.getItem('gif:settings') || '{}')); } catch {}
+  g.crop = null; // per video
   return g;
 }
 type G = ReturnType<typeof initState>;
@@ -60,13 +63,24 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   const alpha = () => s.fmt !== 'mp4' && s.fit === 'contain' && s.bg === 'transparent';
   const persist = () => { try { localStorage.setItem('gif:settings', JSON.stringify(Object.fromEntries(KEYS.map(k => [k, s[k]])))); } catch {} };
 
+  // ---------- crop frame (切り抜き): a rect in source px with the output's aspect ratio, kept inside the video
+  const cropOn = () => s.v && (s.fit === 'cover' || s.lock);
+  function getCrop(): Rect {
+    const r = outW() / outH(), c = s.crop;
+    let w = c ? Math.sqrt(c.w * c.h * r) : s.sw, h = w / r;
+    const q = Math.min(1, s.sw / w, s.sh / h); w *= q; h *= q;
+    const cx = c ? c.x + c.w / 2 : s.sw / 2, cy = c ? c.y + c.h / 2 : s.sh / 2;
+    const x = Math.max(0, Math.min(s.sw - w, cx - w / 2)), y = Math.max(0, Math.min(s.sh - h, cy - h / 2));
+    return { x, y, w, h };
+  }
+
   // ---------- drawing
   function drawFit(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, W: number, H: number) {
     ctx.clearRect(0, 0, W, H);
-    if (s.fit === 'contain' && !alpha()) { ctx.fillStyle = s.fmt === 'mp4' && s.bg === 'transparent' ? '#000000' : s.bg; ctx.fillRect(0, 0, W, H); }
-    const k = s.fit === 'cover' ? Math.max(W / s.sw, H / s.sh) : Math.min(W / s.sw, H / s.sh);
-    const dw = s.sw * k, dh = s.sh * k;
     ctx.imageSmoothingQuality = 'high';
+    if (cropOn()) { const c = getCrop(); ctx.drawImage(v, c.x, c.y, c.w, c.h, 0, 0, W, H); return; }
+    if (!alpha()) { ctx.fillStyle = s.fmt === 'mp4' && s.bg === 'transparent' ? '#000000' : s.bg; ctx.fillRect(0, 0, W, H); }
+    const k = Math.min(W / s.sw, H / s.sh), dw = s.sw * k, dh = s.sh * k;
     ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
   }
   function seek(t: number) {
@@ -78,6 +92,16 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   }
   function drawPreview() {
     const c = pv.current; if (!s.v || !c) return;
+    if (cropOn()) {
+      // whole video, outside the frame dimmed
+      const k = Math.min(1, 960 / Math.max(s.sw, s.sh)), pw = Math.max(1, Math.round(s.sw * k)), ph = Math.max(1, Math.round(s.sh * k));
+      if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+      const ctx = c.getContext('2d')!, r = getCrop();
+      ctx.imageSmoothingQuality = 'high'; ctx.drawImage(v, 0, 0, pw, ph);
+      ctx.save(); ctx.globalAlpha = 0.7; ctx.fillStyle = getComputedStyle(c).getPropertyValue('--bg').trim() || '#000';
+      ctx.beginPath(); ctx.rect(0, 0, pw, ph); ctx.rect(r.x * k, r.y * k, r.w * k, r.h * k); ctx.fill('evenodd'); ctx.restore();
+      return;
+    }
     const W = outW(), H = outH(), k = Math.min(1, 960 / Math.max(W, H));
     const pw = Math.max(1, Math.round(W * k)), ph = Math.max(1, Math.round(H * k));
     if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
@@ -110,18 +134,120 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   useEffect(() => { if (active && s.v) drawPreview(); }, [active]);
   // Space plays / pauses the preview unless a field has focus
   const playRef = useRef(setPlaying); playRef.current = setPlaying;
+  // Ctrl/Cmd+Z, Ctrl+Shift+Z / Ctrl+Y undo/redo the crop frame; arrows move it (Shift = 10px)
+  const cropKey = (e: KeyboardEvent) => {
+    if (!s.v || s.busy) return false;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'z' || k === 'y') { cropUndo(k === 'y' || e.shiftKey); return true; }
+      return false;
+    }
+    const m = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[e.key];
+    if (!m || !cropOn() || e.altKey) return false;
+    const before = s.crop, c = getCrop(), q = e.shiftKey ? 10 : 1;
+    s.crop = { ...c, x: Math.max(0, Math.min(s.sw - c.w, c.x + m[0] * q)), y: Math.max(0, Math.min(s.sh - c.h, c.y + m[1] * q)) };
+    pushHist(before); setCrop(s.crop); return true;
+  };
+  const cropKeyRef = useRef(cropKey); cropKeyRef.current = cropKey;
   useEffect(() => {
     if (!active) return;
     const key = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable)) return;
+      if (cropKeyRef.current(e)) { e.preventDefault(); return; }
+      if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       if (el instanceof HTMLButtonElement) el.blur(); // keep Space from also pressing the focused button
       if (!e.repeat && !g.current.busy) playRef.current(v.paused);
     };
     addEventListener('keydown', key); return () => removeEventListener('keydown', key);
   }, [active, v]);
+
+  // ---------- crop editing: same gestures as image slices.
+  // Drag inside = move, handles = resize, outside = draw a new frame. Alt / a 2nd finger anchors on the center.
+  // Touch: drag starts after 8px, 2-finger tap = undo, 3-finger tap = redo.
+  const hist = useRef({ u: [] as (Rect | null)[], r: [] as (Rect | null)[] });
+  type CDrag = { id: number; type: 'new' | 'move' | 'resize'; h?: string; o: Rect; p: { x: number; y: number }; before: Rect | null };
+  const cdrag = useRef<CDrag | null>(null), pend = useRef<{ id: number; target: Element; p: { x: number; y: number } } | null>(null);
+  const touches = useRef(new Map<number, { x: number; y: number }>()).current;
+  const gest = useRef({ max: 0, t0: 0, moved: false, cancel: false });
+  function setCrop(c: Rect | null) { s.crop = c; clearResult(); drawPreview(); bump(); }
+  function pushHist(before: Rect | null) {
+    const a = before ? JSON.stringify(before) : '', b = s.crop ? JSON.stringify(s.crop) : '';
+    if (a !== b) { hist.current.u.push(before); hist.current.r = []; }
+  }
+  function cropUndo(redo = false) {
+    const h = hist.current, from = redo ? h.r : h.u, to = redo ? h.u : h.r;
+    if (!from.length || !s.v) return;
+    to.push(s.crop); setCrop(from.pop()!);
+  }
+  const cpt = (e: { clientX: number; clientY: number }) => { const r = pv.current!.getBoundingClientRect(), q = r.width / s.sw; return { x: (e.clientX - r.left) / q, y: (e.clientY - r.top) / q }; };
+  function cStart(id: number, target: Element, p: { x: number; y: number }) {
+    const hd = target.closest<HTMLElement>('.hd'), o = getCrop(), before = s.crop;
+    v.pause();
+    if (hd) cdrag.current = { id, type: 'resize', h: hd.dataset.h, o, p, before };
+    else if (target.closest('.sr')) cdrag.current = { id, type: 'move', o, p, before };
+    else cdrag.current = { id, type: 'new', o: { x: Math.max(0, Math.min(s.sw, p.x)), y: Math.max(0, Math.min(s.sh, p.y)), w: 0, h: 0 }, p, before };
+  }
+  function cDown(e: RPointerEvent<HTMLDivElement>) {
+    if (!cropOn() || s.busy || (s.view === 'res' && s.result)) return;
+    const touch = e.pointerType === 'touch';
+    if (touch) {
+      if (!touches.size) gest.current = { max: 0, t0: performance.now(), moved: false, cancel: false };
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); gest.current.max = Math.max(gest.current.max, touches.size);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      if (touches.size === 1 && !cdrag.current) pend.current = { id: e.pointerId, target: e.target as Element, p: cpt(e) };
+      e.preventDefault(); return;
+    }
+    if (e.button !== 0) return;
+    cStart(e.pointerId, e.target as Element, cpt(e));
+    e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
+  }
+  function cMove(e: RPointerEvent<HTMLDivElement>) {
+    const t0 = touches.get(e.pointerId);
+    if (t0 && Math.hypot(e.clientX - t0.x, e.clientY - t0.y) > 8) {
+      gest.current.moved = true;
+      const pd = pend.current; if (pd && pd.id === e.pointerId) { pend.current = null; cStart(pd.id, pd.target, pd.p); }
+    }
+    const g = cdrag.current; if (!g || g.id !== e.pointerId) return;
+    const center = e.altKey || touches.size >= 2, r = outW() / outH(), p = cpt(e), o = g.o, SW = s.sw, SH = s.sh;
+    if (g.type === 'move') {
+      setCrop({ ...o, x: Math.max(0, Math.min(SW - o.w, o.x + p.x - g.p.x)), y: Math.max(0, Math.min(SH - o.h, o.y + p.y - g.p.y)) });
+      return;
+    }
+    // anchor point and the directions the frame grows in from it
+    let ax: number, ay: number, sx: number, sy: number, mode: 'xy' | 'x' | 'y';
+    if (g.type === 'new') {
+      ax = o.x; ay = o.y; sx = p.x < ax ? -1 : 1; sy = p.y < ay ? -1 : 1; mode = 'xy';
+      if (center) { sx = sy = 0; }
+    } else {
+      const h = g.h!;
+      sx = h.includes('w') ? -1 : h.includes('e') ? 1 : 0; sy = h.includes('n') ? -1 : h.includes('s') ? 1 : 0;
+      mode = sx && sy ? 'xy' : sx ? 'x' : 'y';
+      ax = sx < 0 ? o.x + o.w : sx > 0 ? o.x : o.x + o.w / 2; ay = sy < 0 ? o.y + o.h : sy > 0 ? o.y : o.y + o.h / 2;
+      if (center) { ax = o.x + o.w / 2; ay = o.y + o.h / 2; sx = sy = 0; }
+    }
+    // wanted size from the pointer, aspect locked
+    const fx = sx ? Math.abs(p.x - ax) : 2 * Math.abs(p.x - ax), fy = sy ? Math.abs(p.y - ay) : 2 * Math.abs(p.y - ay);
+    let w = mode === 'x' ? fx : mode === 'y' ? fy * r : Math.max(fx, fy * r);
+    // largest size that stays inside the video from this anchor
+    const lx = sx < 0 ? ax : sx > 0 ? SW - ax : 2 * Math.min(ax, SW - ax), ly = sy < 0 ? ay : sy > 0 ? SH - ay : 2 * Math.min(ay, SH - ay);
+    w = Math.max(Math.min(w, lx, ly * r), 1); const h = w / r;
+    if (g.type === 'new' && w < 2 && !s.crop) return;
+    setCrop({ x: sx < 0 ? ax - w : sx > 0 ? ax : ax - w / 2, y: sy < 0 ? ay - h : sy > 0 ? ay : ay - h / 2, w, h });
+  }
+  function cUp(e: RPointerEvent<HTMLDivElement>) {
+    if (touches.delete(e.pointerId)) {
+      if (e.type === 'pointercancel') gest.current.cancel = true;
+      if (pend.current?.id === e.pointerId) pend.current = null;
+      const gs = gest.current;
+      if (!touches.size && gs.max >= 2 && !gs.moved && !gs.cancel && performance.now() - gs.t0 < 500) cropUndo(gs.max !== 2);
+    }
+    const g = cdrag.current; if (!g || g.id !== e.pointerId) return;
+    cdrag.current = null;
+    if (s.crop && s.crop.w < 2) s.crop = g.before;
+    pushHist(g.before); setCrop(s.crop);
+  }
 
   // ---------- timeline
   async function makeThumbs() {
@@ -264,7 +390,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     try {
       await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('この動画は読み込めません')); });
       if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
-      s.v = true; s.dur = v.duration; s.sw = v.videoWidth; s.sh = v.videoHeight; s.start = 0; s.end = Math.min(s.dur, 6);
+      s.v = true; s.dur = v.duration; s.sw = v.videoWidth; s.sh = v.videoHeight; s.start = 0; s.end = Math.min(s.dur, 6); s.crop = null; hist.current = { u: [], r: [] };
       if (s.tpl === 'custom' && s.lock) { s.w = Math.min(s.w, s.sw); lockFromW(); }
       status('');
       bump();
@@ -277,6 +403,9 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   // ---------- render
   const W = outW(), H = outH(), k = Math.min(avail.w / W, avail.h / H, 4);
   const box: CSSProperties | undefined = k > 0 ? { width: Math.floor(W * k) + 'px', height: Math.floor(H * k) + 'px' } : undefined;
+  const crop = cropOn(), ck = crop ? Math.min(avail.w / s.sw, avail.h / s.sh, 4) : 0;
+  const cbox: CSSProperties | undefined = ck > 0 ? { width: Math.floor(s.sw * ck) + 'px', height: Math.floor(s.sh * ck) + 'px' } : undefined;
+  const cr = crop ? getCrop() : null, cq = ck > 0 ? Math.floor(s.sw * ck) / s.sw : 0;
   const show = showRes ? (s.fmt === 'mp4' ? 'v' : 'i') : 'pv';
   const p = (t: number) => (t / s.dur * 100) + '%';
   const tpl = TEMPLATES.find(x => x.id === s.tpl), n = frameCount();
@@ -294,8 +423,15 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   return (
     <section className="gif" id="gif">
       <main className="center" style={{ display: 'flex' }}>
-        <div className="stage" id="gStage" ref={stageRef}>
-          <canvas id="gPv" ref={pv} width="1" height="1" hidden={show !== 'pv' || !s.v} style={box} />
+        <div className={'stage' + (cr && show === 'pv' ? ' crop' : '')} id="gStage" ref={stageRef} onPointerDown={cDown} onPointerMove={cMove} onPointerUp={cUp} onPointerCancel={cUp}>
+          <div className="cv" hidden={show !== 'pv' || !s.v}>
+            <canvas id="gPv" ref={pv} width="1" height="1" style={crop ? cbox : box} />
+            {cr && <div className="sl on" id="gCrop">
+              <div className="sr sel" style={{ left: cr.x * cq + 'px', top: cr.y * cq + 'px', width: cr.w * cq + 'px', height: cr.h * cq + 'px' }}>
+                {HANDLES.map(h => <i key={h} className="hd" data-h={h} style={{ left: (h.includes('w') ? 0 : h.includes('e') ? 100 : 50) + '%', top: (h.includes('n') ? 0 : h.includes('s') ? 100 : 50) + '%', cursor: h + '-resize' }} />)}
+              </div>
+            </div>}
+          </div>
           <img id="gResI" alt="" hidden={show !== 'i' || !s.v} style={box} src={show === 'i' ? s.resUrl : undefined} />
           <video id="gResV" ref={resV} muted loop playsInline hidden={show !== 'v' || !s.v} style={box} src={s.fmt === 'mp4' && s.resUrl ? s.resUrl : undefined} />
           <span className="gempty" id="gEmpty" hidden={s.v}>動画をドロップ</span>
@@ -313,6 +449,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
         </div>
         <div className="status">
           <span id="gName">{s.v ? `${s.name}  ${s.sw}×${s.sh}` : ''}</span>
+          {cr && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
           <span id="gOut" className="num" style={{ marginLeft: 'auto' }}>{s.result ? fmtMB(s.result.size) : ''}</span>
           <Seg id="gView" hidden={!s.result} value={s.view} options={[['src', '元'], ['res', '結果']]} onChange={setView} />
           <button className="link" id="gSave" hidden={!s.result} onClick={saveResult}>保存</button>
