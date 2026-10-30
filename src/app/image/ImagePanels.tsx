@@ -4,7 +4,8 @@ import * as PsdCore from '../../core/psdcore';
 import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe, nameOf, nextSliceName, newSliceId, pathOf, thumbOf } from './model';
 import { toCanvas } from './exporter';
 import type { ImageTool } from './useImageTool';
-import { DraftInput, Seg, StatusText } from '../ui';
+import { DraftInput, Seg, SignRows, StatusText } from '../ui';
+import { drawSign, signActive, signReady, useSign } from '../sign';
 
 const ICON = {
   chev: <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>,
@@ -127,7 +128,8 @@ const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 type Drag = { id: number; type: 'new' | 'move' | 'resize'; s: Slice; o: { x: number; y: number; w?: number; h?: number }; p: { x: number; y: number }; h?: string; added?: boolean };
 
 export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
-  const stageRef = useRef<HTMLDivElement>(null), pvRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null), pvRef = useRef<HTMLCanvasElement>(null), sgRef = useRef<HTMLCanvasElement>(null);
+  const sign = useSign(), [, fontBump] = useState(0);
   const [avail, setAvail] = useState({ w: 0, h: 0 });
   const [drop, setDrop] = useState(false);
   const drag = useRef<Drag | null>(null), bounds = useRef({ x0: 0, y0: 0, x1: 1, y1: 1 });
@@ -169,6 +171,20 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const fit = avail.w > 0 && avail.h > 0 && pv ? Math.min(avail.w / (x1 - x0), avail.h / (y1 - y0), 8) : 0;
   const dw = Math.floor(W * fit), dh = Math.floor(H * fit), k = dw / W;
   const cvStyle: CSSProperties | undefined = fit ? { transform: `translate(${Math.round(((W - x1) - x0) * fit / 2)}px, ${Math.round(((H - y1) - y0) * fit / 2)}px)` } : undefined;
+
+  // signature preview: an overlay over the fitted bounds, drawn into each box that will be exported
+  const bb = pv ? PsdCore.alphaBounds(pv.rgba, pv.W, pv.H) : null;
+  useEffect(() => { signReady(sign).then(() => fontBump(x => x + 1)); }, [sign]);
+  useLayoutEffect(() => {
+    const c = sgRef.current!, on = signActive(sign) && fit > 0 && !!d;
+    const dpr = devicePixelRatio || 1, cw = on ? Math.round((x1 - x0) * fit * dpr) : 1, ch = on ? Math.round((y1 - y0) * fit * dpr) : 1;
+    if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+    const ctx = c.getContext('2d')!; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cw, ch);
+    if (!on) return;
+    ctx.setTransform(k * dpr, 0, 0, k * dpr, -x0 * k * dpr, -y0 * k * dpr);
+    const boxes = slicing ? d!.slices.filter(s => s.on) : t.o.trim && bb ? [bb] : [{ x: 0, y: 0, w: W, h: H }];
+    for (const b of boxes) { ctx.save(); ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip(); drawSign(ctx, b.x, b.y, b.w, b.h, sign); ctx.restore(); }
+  });
 
   const pt = (e: RPointerEvent) => { const r = pvRef.current!.getBoundingClientRect(), q = r.width / pvRef.current!.width; return { x: (e.clientX - r.left) / q, y: (e.clientY - r.top) / q }; };
   function startDrag(id: number, target: Element, p: { x: number; y: number }) {
@@ -257,7 +273,6 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   });
 
   const ws = pv ? dedupe(pv.warnings.filter(w => w.type !== 'text')) : [];
-  const bb = pv ? PsdCore.alphaBounds(pv.rgba, pv.W, pv.H) : null;
   const sc = slicing ? curSlice(d) : null;
   return (
     <main className="center">
@@ -275,6 +290,8 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
               </div>
             ))}
           </div>
+          <canvas className="sg" ref={sgRef} width="1" height="1" hidden={!signActive(sign) || !fit}
+            style={fit ? { left: x0 * k + 'px', top: y0 * k + 'px', width: (x1 - x0) * k + 'px', height: (y1 - y0) * k + 'px' } : undefined} />
         </div>
         <div className="warnbox" id="pvInfo" hidden={!ws.length}>
           {ws.map((w, i) => <div key={i}>{`${w.path}：${WARN_JA[w.type] || w.type}${w.detail ? `（${w.detail}）` : ''}`}</div>)}
@@ -314,6 +331,9 @@ export function Inspector({ t }: { t: ImageTool }) {
         <div className="sec">
           <label className="prop pair fill" htmlFor="prefix"><span>接頭辞</span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
           <label className="prop pair fill" htmlFor="suffix"><span>接尾辞</span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+        </div>
+        <div className="sec">
+          <SignRows />
         </div>
         <div className="sec">
           {sw('hidden', 'hidden', '非表示レイヤーを含む')}

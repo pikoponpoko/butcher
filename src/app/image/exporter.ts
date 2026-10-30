@@ -2,6 +2,7 @@
 import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
 import { saveBlob, saveFailText } from '../save';
+import { drawSign, signReady } from '../sign';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
@@ -56,6 +57,7 @@ async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number
   const ctx = out.getContext('2d')!; ctx.imageSmoothingQuality = 'high';
   if (o.fmt === 'jpeg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, out.width, out.height); }
   ctx.drawImage(c, x, y, w, h, 0, 0, out.width, out.height);
+  drawSign(ctx, 0, 0, out.width, out.height);
   const q = Math.min(100, Math.max(1, +o.quality || 90)) / 100;
   return await new Promise<Blob | null>(res => out.toBlob(res, 'image/' + o.fmt, q));
 }
@@ -68,6 +70,7 @@ const extOf = (o: Settings) => o.fmt === 'jpeg' ? 'jpg' : o.fmt;
 
 export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice | null): Promise<Status> {
   const r = renderNode(d, n, o.hidden);
+  await signReady();
   const blob = await encode(o, r.rgba, r.W, r.H, s);
   if (!blob) return [{ t: '空の画像です', c: 'err' }];
   const base = s ? s.name : n ? nameOf(n) : stem(d.name);
@@ -85,6 +88,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
     catch (e: any) { if (e.name === 'AbortError') return [{ t: '保存を取り消しました' }]; noDir(); return [{ t: 'この環境ではフォルダに保存できません', c: 'err' }]; }
   }
   let written = 0, skipped = 0;
+  await signReady();
   try {
     for (const d of docs) {
       const base = docs.length > 1 ? safe(stem(d.name)) + '/' : '';
