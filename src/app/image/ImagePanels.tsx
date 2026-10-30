@@ -136,7 +136,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const [avail, setAvail] = useState({ w: 0, h: 0 });
   const [drop, setDrop] = useState(false);
   const drag = useRef<Drag | null>(null), bounds = useRef({ x0: 0, y0: 0, x1: 1, y1: 1 });
-  // touch: 2-finger tap = undo, 3-finger tap = redo, a second finger during a slice drag = Shift.
+  // touch: 2-finger tap = undo, 3-finger tap = redo, a second finger during a slice drag = Shift + Alt.
   // A touch drag starts only after the finger moves, so a multi-finger tap never edits a slice.
   const touches = useRef(new Map<number, { x: number; y: number }>()).current;
   const gest = useRef({ max: 0, t0: 0, moved: false, cancel: false });
@@ -206,18 +206,37 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       const pd = pend.current; if (pd && pd.id === e.pointerId) { pend.current = null; startDrag(pd.id, pd.target, pd.p); }
     }
     const g = drag.current; if (!g || !d || g.id !== e.pointerId) return;
-    const shift = e.shiftKey || touches.size >= 2;
+    // Shift keeps the aspect ratio, Alt anchors on the center
+    const shift = e.shiftKey || touches.size >= 2, alt = e.altKey || touches.size >= 2;
     const p = pt(e), DW = d.psd.width, DH = d.psd.height, X0 = -DW, X1 = 2 * DW, Y0 = -DH, Y1 = 2 * DH, dx = p.x - g.p.x, dy = p.y - g.p.y, s = g.s, o = g.o as Slice;
     if (g.type === 'new') {
       const x2 = Math.max(X0, Math.min(X1, Math.round(p.x))), y2 = Math.max(Y0, Math.min(Y1, Math.round(p.y)));
-      let w = Math.abs(x2 - o.x), h = Math.abs(y2 - o.y);
-      if (shift) { w = h = Math.min(Math.max(w, h), x2 < o.x ? o.x - X0 : X1 - o.x, y2 < o.y ? o.y - Y0 : Y1 - o.y); }
-      Object.assign(s, { x: x2 < o.x ? o.x - w : o.x, y: y2 < o.y ? o.y - h : o.y, w, h });
+      if (alt) {
+        // the start point is the center
+        const mx = Math.min(o.x - X0, X1 - o.x), my = Math.min(o.y - Y0, Y1 - o.y);
+        let hw = Math.min(Math.abs(x2 - o.x), mx), hh = Math.min(Math.abs(y2 - o.y), my);
+        if (shift) hw = hh = Math.min(Math.max(hw, hh), mx, my);
+        Object.assign(s, { x: o.x - hw, y: o.y - hh, w: 2 * hw, h: 2 * hh });
+      } else {
+        let w = Math.abs(x2 - o.x), h = Math.abs(y2 - o.y);
+        if (shift) { w = h = Math.min(Math.max(w, h), x2 < o.x ? o.x - X0 : X1 - o.x, y2 < o.y ? o.y - Y0 : Y1 - o.y); }
+        Object.assign(s, { x: x2 < o.x ? o.x - w : o.x, y: y2 < o.y ? o.y - h : o.y, w, h });
+      }
       if (!g.added && s.w >= 2 && s.h >= 2) { g.added = true; d.slices.push(s); d.sliceSel = s.id; }
       if (g.added) t.sliceChanged();
       return;
     }
     if (g.type === 'move') { s.x = Math.round(o.x + dx); s.y = Math.round(o.y + dy); clampSlice(s, DW, DH); }
+    else if (alt) {
+      // resize symmetrically around the center
+      const h = g.h!, cx = o.x + o.w / 2, cy = o.y + o.h / 2, mx = Math.min(cx - X0, X1 - cx), my = Math.min(cy - Y0, Y1 - cy);
+      let hw = h.includes('e') ? o.w / 2 + dx : h.includes('w') ? o.w / 2 - dx : o.w / 2, hh = h.includes('s') ? o.h / 2 + dy : h.includes('n') ? o.h / 2 - dy : o.h / 2;
+      hw = Math.max(0.5, hw); hh = Math.max(0.5, hh);
+      if (shift) { const r = o.w / o.h; if (h.length === 2) { if (hw / r > hh) hh = hw / r; else hw = hh * r; } else if (h === 'e' || h === 'w') hh = hw / r; else hw = hh * r; const q = Math.min(1, mx / hw, my / hh); hw *= q; hh *= q; }
+      else { hw = Math.min(hw, mx); hh = Math.min(hh, my); }
+      const w = Math.max(1, Math.round(2 * hw)), hgt = Math.max(1, Math.round(2 * hh));
+      Object.assign(s, { x: Math.round(cx - w / 2), y: Math.round(cy - hgt / 2), w, h: hgt });
+    }
     else {
       let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h; const h = g.h!;
       if (h.includes('w')) x1 = Math.min(x2 - 1, Math.max(X0, Math.round(o.x + dx)));
