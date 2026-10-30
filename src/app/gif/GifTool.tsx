@@ -65,8 +65,9 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
 
   // ---------- crop frame (切り抜き): a rect in source px with the output's aspect ratio, kept inside the video
   const cropOn = () => s.v && (s.fit === 'cover' || s.lock);
-  function getCrop(): Rect {
-    const r = outW() / outH(), c = s.crop;
+  // r = output aspect; sizes in a preset set each get the frame refitted around the same center
+  function getCrop(r = outW() / outH()): Rect {
+    const c = s.crop;
     let w = c ? Math.sqrt(c.w * c.h * r) : s.sw, h = w / r;
     const q = Math.min(1, s.sw / w, s.sh / h); w *= q; h *= q;
     const cx = c ? c.x + c.w / 2 : s.sw / 2, cy = c ? c.y + c.h / 2 : s.sh / 2;
@@ -78,7 +79,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   function drawFit(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, W: number, H: number) {
     ctx.clearRect(0, 0, W, H);
     ctx.imageSmoothingQuality = 'high';
-    if (cropOn()) { const c = getCrop(); ctx.drawImage(v, c.x, c.y, c.w, c.h, 0, 0, W, H); return; }
+    if (cropOn()) { const c = getCrop(W / H); ctx.drawImage(v, c.x, c.y, c.w, c.h, 0, 0, W, H); return; }
     if (!alpha()) { ctx.fillStyle = s.fmt === 'mp4' && s.bg === 'transparent' ? '#000000' : s.bg; ctx.fillRect(0, 0, W, H); }
     const k = Math.min(W / s.sw, H / s.sh), dw = s.sw * k, dh = s.sh * k;
     ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
