@@ -102,7 +102,7 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
   );
 }
 
-export function LayersPanel({ t, round, setRound }: { t: ImageTool; round: boolean; setRound: (v: boolean) => void }) {
+export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageTool; round: boolean; setRound: (v: boolean) => void; fold: boolean; setFold: (v: boolean) => void }) {
   const fileRef = useRef<HTMLInputElement>(null), nameRef = useRef<HTMLInputElement>(null);
   const layer = t.pane === 'layer', d = t.doc, s = curSlice(d);
   const selAll = () => { if (!d) return; (function a(ch?: Node[]) { for (const n of ch || []) { d.checked.add(n._id); a(n.children); } })(d.psd.children); t.bump(); };
@@ -113,6 +113,7 @@ export function LayersPanel({ t, round, setRound }: { t: ImageTool; round: boole
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { d?.checked.clear(); t.bump(); }}>解除</button></span>
         <span className="sp" hidden={layer}><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
+        <button className="link fold" id="fold" aria-label={fold ? '開く' : '畳む'} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
       </div>
       {d && layer && <LayerTree key={t.cur} t={t} />}
       {d && !layer && <SliceList t={t} nameRef={nameRef} />}
@@ -269,19 +270,19 @@ export function Inspector({ t }: { t: ImageTool }) {
     <aside className="panel inspector" aria-label="書き出し設定">
       <div className="insp">
         <div className="sec">
-          <div className="prop lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
-          <div className="prop"><span>形式</span><Seg id="fmt" value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']]} onChange={v => set('fmt', v)} /></div>
+          <div className="prop pair nl lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
+          <div className="prop pair nl"><span>形式</span><Seg id="fmt" value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']]} onChange={v => set('fmt', v)} /></div>
           <label className="prop" htmlFor="quality" id="qualityRow" hidden={o.fmt === 'png'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec">
-          <div className="prop"><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ']]} onChange={v => set('size', v)} /></div>
+          <div className="prop pair"><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ']]} onChange={v => set('size', v)} /></div>
           <div className="prop" id="sizeRow" hidden={o.size === 'orig'}><span></span><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
             <select id="basis" aria-label="基準" style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">キャンバス</option><option value="image">画像ごと</option></select></span></div>
-          {sw('trim', 'trim', <span>余白カット</span>, 'prop lp', !layer)}
+          {sw('trim', 'trim', <span>余白カット</span>, 'prop pair lp', !layer)}
         </div>
         <div className="sec">
-          <label className="prop" htmlFor="prefix"><span>接頭辞</span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
-          <label className="prop" htmlFor="suffix"><span>接尾辞</span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="prefix"><span>接頭辞</span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="suffix"><span>接尾辞</span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
         </div>
         <div className="sec">
           {sw('hidden', 'hidden', '非表示レイヤーを含む')}
