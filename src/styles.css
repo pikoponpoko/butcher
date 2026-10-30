@@ -174,7 +174,7 @@ button, select, input { font: inherit; color: inherit; }
   .gif .insp .prop.pair select { width: 100%; max-width: none; justify-self: stretch; }
   .gif .insp .sec > .prop.pair[for="gTpl"] { flex: 1 1 0; min-width: 0; }
   .gif .insp .sec > .prop.pair[for="gTpl"] select { min-width: 0; }
-  .gif .insp .sec > #gFmtRow { flex: 0 0 auto; }
+  .gif .insp .sec > #gFmtRow { flex: 1 1 0; min-width: 0; }
 }
 @media (max-width: 640px) { .gif { grid-template-rows: 56vh auto; } .gif .insp .sec > .prop.pair .seg button { padding: 0 7px; } }
 
