@@ -111,7 +111,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={t.setPane} />
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
-        <span className="sp" hidden={layer}><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
+        <span className="sp" hidden={layer}><button className="link" id="slAuto" onClick={t.autoSlice}>自動</button><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
         <button className="link fold" id="fold" aria-label={fold ? '開く' : '畳む'} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
       </div>

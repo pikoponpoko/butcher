@@ -102,6 +102,7 @@ button, select, input { font: inherit; color: inherit; }
 .ph .seg { margin-right: auto; flex: none; }
 .ph .seg button { padding-left: 8px; padding-right: 8px; }
 .ph > span { display: flex; align-items: center; gap: 2px; flex: none; }
+.ph > span .link { padding: 0 3px; }
 .seg button, .link, .tag { white-space: nowrap; }
 .drop { position: absolute; inset: 12px; border: 2px dashed var(--accent); border-radius: 10px; display: grid; place-items: center; color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--bg) 85%, transparent); }
 .warnbox { position: absolute; left: 12px; right: 12px; top: 12px; display: grid; gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--warn); color: var(--warn); max-height: 40%; overflow: auto; }
@@ -173,7 +174,7 @@ button, select, input { font: inherit; color: inherit; }
 
 @media (max-width: 1100px) {
   html, body, #root { height: auto; }
-  .app { height: auto; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: 44px 62vh auto;
+  .app { height: auto; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: 44px 62vh auto;
     grid-template-areas: "bar bar" "layers center" "insp insp"; }
   .layers { min-height: 0; }
   .inspector { border-left: 0; border-top: 1px solid var(--line); }
