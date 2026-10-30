@@ -44,7 +44,7 @@ export function SignRows() {
     </div>
     <div className="prop signopt" hidden={!s.on}><span></span><span className="unit">
       <Seg value={s.size} options={[['s', '小'], ['m', '中'], ['l', '大']]} onChange={size => setSign({ size })} />
-      <Seg value={s.color} options={[['#ffffff', '白'], ['#000000', '黒']]} onChange={color => setSign({ color })} />
+      <Seg value={s.color} options={[['auto', '自動'], ['#ffffff', '白'], ['#000000', '黒']]} onChange={color => setSign({ color })} />
     </span></div>
   </>;
 }

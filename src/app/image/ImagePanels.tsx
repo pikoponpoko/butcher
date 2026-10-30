@@ -5,7 +5,7 @@ import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe,
 import { toCanvas } from './exporter';
 import type { ImageTool } from './useImageTool';
 import { DraftInput, Seg, SignRows, StatusText } from '../ui';
-import { drawSign, signActive, signReady, useSign } from '../sign';
+import { contrastColor, drawSign, signActive, signLayout, signReady, useSign } from '../sign';
 
 const ICON = {
   chev: <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>,
@@ -183,7 +183,17 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
     if (!on) return;
     ctx.setTransform(k * dpr, 0, 0, k * dpr, -x0 * k * dpr, -y0 * k * dpr);
     const boxes = slicing ? d!.slices.filter(s => s.on) : t.o.trim && bb ? [bb] : [{ x: 0, y: 0, w: W, h: H }];
-    for (const b of boxes) { ctx.save(); ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip(); drawSign(ctx, b.x, b.y, b.w, b.h, sign); ctx.restore(); }
+    for (const b of boxes) {
+      // 'auto' color: judged from the preview pixels under the text (outside the canvas counts as transparent)
+      let col: '#ffffff' | '#000000' | undefined;
+      if (sign.color === 'auto' && pv) {
+        const r = signLayout(b.x, b.y, b.w, b.h, sign).rect, x0 = Math.floor(r.x), y0 = Math.floor(r.y), x1 = Math.ceil(r.x + r.w), y1 = Math.ceil(r.y + r.h);
+        const px = new Uint8ClampedArray(Math.max(0, x1 - x0) * Math.max(0, y1 - y0) * 4); let o = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++, o += 4) if (x >= 0 && y >= 0 && x < pv.W && y < pv.H) px.set(pv.rgba.subarray((y * pv.W + x) * 4, (y * pv.W + x) * 4 + 4), o);
+        col = contrastColor(px);
+      }
+      ctx.save(); ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip(); drawSign(ctx, b.x, b.y, b.w, b.h, sign, col); ctx.restore();
+    }
   });
 
   const pt = (e: RPointerEvent) => { const r = pvRef.current!.getBoundingClientRect(), q = r.width / pvRef.current!.width; return { x: (e.clientX - r.left) / q, y: (e.clientY - r.top) / q }; };
