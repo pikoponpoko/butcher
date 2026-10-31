@@ -128,6 +128,10 @@ button, select, input { font: inherit; color: inherit; }
 .seg button:hover { color: var(--fg); }
 .seg button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--line); font-weight: 500; }
 .kv { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 8px; }
+@media (min-width: 1101px) {
+  #mode, #fmt { grid-column: 2 / -1; display: flex; width: auto; justify-self: stretch; }
+  #mode button, #fmt button { flex: 1 1 auto; padding: 0 4px; }
+}
 .kv > span { color: var(--muted); }
 .kv input { height: 26px; background: var(--field); border: 1px solid var(--line); border-radius: 5px; padding: 0 8px; width: 100%; box-sizing: border-box; min-width: 0; }
 .kv input:focus { border-color: var(--accent); outline: none; }
