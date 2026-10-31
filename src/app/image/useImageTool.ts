@@ -5,6 +5,7 @@ import { type Doc, type Node, type Slice, type Snap, SRC_RE, hiddenKey, restore,
 import { type Rect, detectPanels } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
+import { tr } from '../i18n';
 import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 
 export type Pane = 'layer' | 'slice';
@@ -60,7 +61,7 @@ export function useImageTool() {
     let last: Doc | undefined;
     for (const f of files) {
       try { setStatus([{ t: f.name }]); last = await openFile(f.name, await f.arrayBuffer()); docs.push(last); setStatus([]); }
-      catch (err: any) { setStatus([{ t: `${f.name}: 読み込めません（${String(err.message || err)}）`, c: 'err' }]); }
+      catch (err: any) { setStatus([{ t: tr('{f}: 読み込めません（{e}）', { f: f.name, e: tr(String(err.message || err)) }), c: 'err' }]); }
     }
     if (last) { setCur(docs.length - 1); setSel(null); if (last.isImage && pane !== 'slice') setPane('slice'); }
     bump();
@@ -96,20 +97,20 @@ export function useImageTool() {
     if (!doc) return;
     const W = doc.psd.width, H = doc.psd.height, r = preview && !sel && preview.W === W && preview.H === H ? preview : renderNode(doc, null, o.hidden);
     const found = detectPanels(r.rgba, r.W, r.H);
-    if (!found.length) { setStatus([{ t: '枠が見つかりません', c: 'warn' }]); return; }
+    if (!found.length) { setStatus([{ t: tr('枠が見つかりません'), c: 'warn' }]); return; }
     const has = (p: Rect) => doc.slices.some(s => s.x === p.x && s.y === p.y && s.w === p.w && s.h === p.h);
     const add = found.filter(p => !has(p));
     if (add.length) edit(() => {
       for (const p of add) doc.slices.push({ id: newSliceId(), name: nextSliceName(doc), ...p, on: true });
       doc.sliceSel = doc.slices[doc.slices.length - add.length].id;
     });
-    setStatus([{ t: `${add.length} 件のスライスを追加`, c: 'ok' }]);
+    setStatus([{ t: tr('{n} 件のスライスを追加', { n: add.length }), c: 'ok' }]);
   }
   async function saveSlices() {
     if (!doc) return;
-    if (!doc.slices.length) { setStatus([{ t: 'スライスがありません', c: 'err' }]); return; }
+    if (!doc.slices.length) { setStatus([{ t: tr('スライスがありません'), c: 'err' }]); return; }
     const data = { type: 'slices', version: 2, width: doc.psd.width, height: doc.psd.height, slices: sliceData(doc).map(({ name, x, y, w, h, on }) => ({ name, cx: x + w / 2, cy: y + h / 2, w, h, on })) };
-    if (await saveBlob(safe(stem(doc.name)) + '_slices.json', new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })) === 'ok') setStatus([{ t: 'スライス設定を保存', c: 'ok' }]);
+    if (await saveBlob(safe(stem(doc.name)) + '_slices.json', new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })) === 'ok') setStatus([{ t: tr('スライス設定を保存'), c: 'ok' }]);
   }
   async function loadSlices(f: File) {
     if (!doc) return;
@@ -120,8 +121,8 @@ export function useImageTool() {
       doc.slices = j.slices.map((s: any) => { const o: Slice = { id: newSliceId(), name: String(s.name || '') || nextSliceName(doc), x: +s.x || 0, y: +s.y || 0, w: +s.w || 1, h: +s.h || 1, on: s.on !== false };
         if (s.cx != null) { o.x = (+s.cx || 0) - o.w / 2; o.y = (+s.cy || 0) - o.h / 2; } clampSlice(o, W, H); return o; });
       doc.sliceSel = doc.slices[0]?.id ?? null; end(); if (pane !== 'slice') setPane('slice'); sliceChanged();
-      setStatus((j.width && (j.width !== W || j.height !== H)) ? [{ t: `キャンバスサイズが異なります（${j.width}×${j.height}）`, c: 'warn' }] : [{ t: `${doc.slices.length} 件のスライスを読込`, c: 'ok' }]);
-    } catch { setStatus([{ t: 'スライス設定を読み込めません', c: 'err' }]); }
+      setStatus((j.width && (j.width !== W || j.height !== H)) ? [{ t: tr('キャンバスサイズが異なります（{w}×{h}）', { w: j.width, h: j.height }), c: 'warn' }] : [{ t: tr('{n} 件のスライスを読込', { n: doc.slices.length }), c: 'ok' }]);
+    } catch { setStatus([{ t: tr('スライス設定を読み込めません'), c: 'err' }]); }
   }
 
   return {

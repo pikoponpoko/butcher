@@ -6,6 +6,7 @@ import { filesPerTarget, toCanvas, variantsOf } from './exporter';
 import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
 import { AddHint, DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
+import { tr } from '../i18n';
 import { contrastColor, drawSign, signActive, signLayout, signReady, useSign } from '../sign';
 
 const ICON = {
@@ -26,7 +27,7 @@ function RenameInput({ t, n, done }: { t: ImageTool; n: Node; done: () => void }
   const [v, setV] = useState(nameOf(n)), ended = useRef(false), ref = useRef<HTMLInputElement>(null);
   useEffect(() => { ref.current!.focus(); ref.current!.select(); }, []);
   const end = (ok: boolean) => { if (ended.current) return; ended.current = true; if (ok) { const s = v.trim(); t.begin(); n._rename = s && s !== n.name ? s : undefined; t.end(); } done(); };
-  return <input ref={ref} className="rn" value={v} aria-label="名前" onChange={e => setV(e.target.value)}
+  return <input ref={ref} className="rn" value={v} aria-label={tr('名前')} onChange={e => setV(e.target.value)}
     onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') end(true); else if (e.key === 'Escape') end(false); }}
     onBlur={() => end(true)} onClick={e => e.stopPropagation()} />;
 }
@@ -44,18 +45,18 @@ function LayerTree({ t }: { t: ImageTool }) {
       rows.push(
         <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ paddingLeft: 8 + depth * 14 + 'px' }}
           onClick={() => t.setSel(t.sel === n ? null : n)}>
-          <button className="eye" aria-label={n.hidden ? '表示' : '非表示'} aria-pressed={!n.hidden}
+          <button className="eye" aria-label={tr(n.hidden ? '表示' : '非表示')} aria-pressed={!n.hidden}
             onClick={e => { e.stopPropagation(); t.edit(() => { n.hidden = !n.hidden; }); }}>{n.hidden ? ICON.eyeOff : ICON.eye}</button>
-          <button className={'tw' + (collapsed.has(n) ? ' closed' : '')} aria-label="開閉" style={n.children ? undefined : { visibility: 'hidden' }}
+          <button className={'tw' + (collapsed.has(n) ? ' closed' : '')} aria-label={tr('開閉')} style={n.children ? undefined : { visibility: 'hidden' }}
             onClick={n.children ? e => { e.stopPropagation(); collapsed.has(n) ? collapsed.delete(n) : collapsed.add(n); t.bump(); } : undefined}>{n.children ? ICON.chev : null}</button>
           {n.children ? <span className="thumb folder">{ICON.folder}</span> : <span className="thumb" style={thumbStyle} />}
           {renaming === n ? <RenameInput t={t} n={n} done={() => { setRenaming(null); t.bump(); }} /> :
-            <span className={'name' + (n._rename != null ? ' renamed' : '')} title={n._rename != null ? `元の名前：${n.name || ''}` : undefined}
-              onDoubleClick={e => { e.stopPropagation(); setRenaming(n); }}>{nameOf(n) || '(名前なし)'}</span>}
-          {n.clipping && <span className="tag">クリップ</span>}
+            <span className={'name' + (n._rename != null ? ' renamed' : '')} title={n._rename != null ? tr('元の名前：{n}', { n: n.name || '' }) : undefined}
+              onDoubleClick={e => { e.stopPropagation(); setRenaming(n); }}>{nameOf(n) || tr('(名前なし)')}</span>}
+          {n.clipping && <span className="tag">{tr('クリップ')}</span>}
           {bm && bm !== 'normal' && bm !== 'pass through' && <span className="tag">{bm}</span>}
-          {w.length > 0 && <span className="tag w" title={w.map(x => WARN_JA[x] || x).join('\n')}>警告</span>}
-          <input type="checkbox" className="ck" checked={d.checked.has(n._id)} aria-label="書き出し対象"
+          {w.length > 0 && <span className="tag w" title={w.map(x => tr(WARN_JA[x] || x)).join('\n')}>{tr('警告')}</span>}
+          <input type="checkbox" className="ck" checked={d.checked.has(n._id)} aria-label={tr('書き出し対象')}
             onClick={e => e.stopPropagation()} onChange={e => setChecked(n, e.target.checked)} />
         </div>,
       );
@@ -69,12 +70,12 @@ function SliceList({ t, nameRef }: { t: ImageTool; nameRef: RefObject<HTMLInputE
   const d = t.doc!;
   return (
     <div className="slist sp" id="slist">
-      {!d.slices.length && <div className="empty">画像上をドラッグして作成</div>}
+      {!d.slices.length && <div className="empty">{tr('画像上をドラッグして作成')}</div>}
       {d.slices.map(s => (
         <div key={s.id} className={'row' + (s.id === d.sliceSel ? ' sel' : '')} onClick={() => { d.sliceSel = s.id; t.sliceChanged(); }}>
           <span className="name" onDoubleClick={e => { e.stopPropagation(); d.sliceSel = s.id; t.sliceChanged(); setTimeout(() => { nameRef.current?.focus(); nameRef.current?.select(); }); }}>{s.name}</span>
           <span className="tag num">{`${s.w}×${s.h}`}</span>
-          <input type="checkbox" className="ck" checked={s.on} aria-label="書き出し対象" onClick={e => e.stopPropagation()} onChange={e => { const on = e.target.checked; t.edit(() => { s.on = on; }); }} />
+          <input type="checkbox" className="ck" checked={s.on} aria-label={tr('書き出し対象')} onClick={e => e.stopPropagation()} onChange={e => { const on = e.target.checked; t.edit(() => { s.on = on; }); }} />
         </div>
       ))}
     </div>
@@ -95,12 +96,12 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
   return (
     <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') { c.current = { x: s.x + s.w / 2, y: s.y + s.h / 2 }; t.begin(); } }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
       <div className="r">
-        <input ref={nameRef} id="sName" type="text" aria-label="スライス名" value={s.name}
+        <input ref={nameRef} id="sName" type="text" aria-label={tr('スライス名')} value={s.name}
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
           onBlur={() => { if (!s.name.trim()) { s.name = nextSliceName(d); t.sliceChanged(); } }}
           onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); }} />
-        <div className="seg"><button id="sRound" aria-pressed={round} title="丸く切り抜いたときの見え方" onClick={() => setRound(!round)}>丸</button></div>
-        <button className="link" id="sDel" onClick={t.deleteSlice}>削除</button>
+        <div className="seg"><button id="sRound" aria-pressed={round} title={tr('丸く切り抜いたときの見え方')} onClick={() => setRound(!round)}>{tr('丸')}</button></div>
+        <button className="link" id="sDel" onClick={t.deleteSlice}>{tr('削除')}</button>
       </div>
       <div className="g">
         {(['x', 'y', 'w', 'h'] as const).map(k => (
@@ -124,13 +125,13 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
     else if (matchMedia('(max-width: 640px)').matches) setFold(!fold);
   };
   return (
-    <aside className="panel layers" aria-label="レイヤー">
+    <aside className="panel layers" aria-label={tr('レイヤー')}>
       <div className="ph">
-        <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={pickPane} />
-        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
-        <span className="sp" hidden={layer}><button className="link ic" id="slAuto" aria-label="自動" title="自動" onClick={t.autoSlice}>{ICON.auto}</button><button className="link ic" id="slLoad" aria-label="読込" title="読込" onClick={() => fileRef.current!.click()}>{ICON.open}</button><button className="link ic" id="slSave" aria-label="保存" title="保存" onClick={t.saveSlices}>{ICON.save}</button><button className="link ic" id="slClear" aria-label="全削除" title="全削除" disabled={!d?.slices.length} onClick={t.clearSlices}>{ICON.trash}</button>
+        <Seg id="pane" value={t.pane} options={[['layer', tr('レイヤー')], ['slice', tr('スライス')]]} onChange={pickPane} />
+        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>{tr('すべて')}</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>{tr('解除')}</button></span>
+        <span className="sp" hidden={layer}><button className="link ic" id="slAuto" aria-label={tr('自動')} title={tr('自動')} onClick={t.autoSlice}>{ICON.auto}</button><button className="link ic" id="slLoad" aria-label={tr('読込')} title={tr('読込')} onClick={() => fileRef.current!.click()}>{ICON.open}</button><button className="link ic" id="slSave" aria-label={tr('保存')} title={tr('保存')} onClick={t.saveSlices}>{ICON.save}</button><button className="link ic" id="slClear" aria-label={tr('全削除')} title={tr('全削除')} disabled={!d?.slices.length} onClick={t.clearSlices}>{ICON.trash}</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
-        <button className="link fold" id="fold" aria-label={fold ? '開く' : '畳む'} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
+        <button className="link fold" id="fold" aria-label={tr(fold ? '開く' : '畳む')} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
       </div>
       {d && layer && <LayerTree key={t.cur} t={t} />}
       {d && !layer && <SliceList t={t} nameRef={nameRef} />}
@@ -406,16 +407,16 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
             style={fit ? { left: x0 * k + 'px', top: y0 * k + 'px', width: (x1 - x0) * k + 'px', height: (y1 - y0) * k + 'px' } : undefined} />
         </div>
         <div className="warnbox" id="pvInfo" hidden={!ws.length}>
-          {ws.map((w, i) => <div key={i}>{`${w.path}：${WARN_JA[w.type] || w.type}${w.detail ? `（${w.detail}）` : ''}`}</div>)}
+          {ws.map((w, i) => <div key={i}>{`${w.path}${tr('：')}${tr(WARN_JA[w.type] || w.type)}${w.detail ? tr('（{d}）', { d: w.detail }) : ''}`}</div>)}
         </div>
         {!d && !drop && <AddHint />}
-        <div className="drop" id="drop" hidden={!drop}>ここにドロップ</div>
+        <div className="drop" id="drop" hidden={!drop}>{tr('ここにドロップ')}</div>
       </div>
       <div className="status">
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
-        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : '空') + `  ${pv.ms}ms` : ''}</span>
-        <span id="pvState">{pv && (ws.length ? <span className="warn">{`警告 ${ws.length}`}</span> : <span className="ok">警告なし</span>)}</span>
-        <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}>保存</button>
+        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) + `  ${pv.ms}ms` : ''}</span>
+        <span id="pvState">{pv && (ws.length ? <span className="warn">{tr('警告 {n}', { n: ws.length })}</span> : <span className="ok">{tr('警告なし')}</span>)}</span>
+        <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}>{tr('保存')}</button>
       </div>
     </main>
   );
@@ -428,45 +429,45 @@ export function Inspector({ t }: { t: ImageTool }) {
     <label className={'sw' + (cls ? ' ' + cls : '')} htmlFor={id} hidden={hidden}>{label}<input id={id} type="checkbox" checked={o[key]} onChange={e => { set(key, e.target.checked); onToggle?.(); }} /></label>
   );
   return (
-    <aside className="panel inspector" aria-label="書き出し設定">
+    <aside className="panel inspector" aria-label={tr('書き出し設定')}>
       <div className="insp">
         <div className="sec">
-          <div className="prop pair nl lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
-          <div className="prop pair nl"><span>形式</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
-          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns || o.fmt === 'png' || o.fmt === 'ico'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
+          <div className="prop pair nl lp" hidden={!layer}><span>{tr('方式')}</span><Seg id="mode" value={o.mode} options={[['layer', tr('レイヤー')], ['folder', tr('フォルダ')], ['both', tr('両方')]]} onChange={v => set('mode', v)} /></div>
+          <div className="prop pair nl"><span>{tr('形式')}</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
+          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns || o.fmt === 'png' || o.fmt === 'ico'}><span>{tr('画質')}</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec" hidden={ico && !layer}>
-          <div className="prop pair" hidden={ico}><span>サイズ</span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', '原寸'], ['w', '指定'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={v => set('size', v)} /></div>
-          <div className="prop" id="sizeRow" hidden={ico || (o.size !== 'w' && o.size !== 'h')}><select id="side" aria-label="基準の辺" value={o.size} onChange={e => set('size', e.target.value as 'w')}><option value="w">幅</option><option value="h">高さ</option></select><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
-            <select id="basis" aria-label="基準" style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">キャンバス</option><option value="image">画像ごと</option></select></span></div>
+          <div className="prop pair" hidden={ico}><span>{tr('サイズ')}</span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', tr('原寸')], ['w', tr('指定')], ['sns', tr('SNS')], ['wp', tr('壁紙')]]} onChange={v => set('size', v)} /></div>
+          <div className="prop" id="sizeRow" hidden={ico || (o.size !== 'w' && o.size !== 'h')}><select id="side" aria-label={tr('基準の辺')} value={o.size} onChange={e => set('size', e.target.value as 'w')}><option value="w">{tr('幅')}</option><option value="h">{tr('高さ')}</option></select><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label={tr('ピクセル')} onChange={e => set('px', e.target.value)} />px
+            <select id="basis" aria-label={tr('基準')} style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">{tr('キャンバス')}</option><option value="image">{tr('画像ごと')}</option></select></span></div>
           {g && SERVICES[g].map(([svc, label]) => (
             <div key={svc} className="prop ps"><span>{label}</span>
-              <Toggles id={'ps-' + svc} values={o.picks} options={IMAGE_PRESETS.filter(x => x.svc === svc).map(x => [x.id, x.label])} onToggle={id => set('picks', toggleId(o.picks, id))} /></div>
+              <Toggles id={'ps-' + svc} values={o.picks} options={IMAGE_PRESETS.filter(x => x.svc === svc).map(x => [x.id, tr(x.label)])} onToggle={id => set('picks', toggleId(o.picks, id))} /></div>
           ))}
-          {g && <div className="prop ps"><span>合わせ方</span><Seg id="fit" value={o.fits[g]} options={[['contain', '余白'], ['cover', '切り抜き']]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
-          {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span>画質</span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
-          {sw('trim', 'trim', <span>余白カット</span>, 'prop pair lp', !layer)}
+          {g && <div className="prop ps"><span>{tr('合わせ方')}</span><Seg id="fit" value={o.fits[g]} options={[['contain', tr('余白')], ['cover', tr('切り抜き')]]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
+          {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span>{tr('画質')}</span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
+          {sw('trim', 'trim', <span>{tr('余白カット')}</span>, 'prop pair lp', !layer)}
         </div>
         <div className="sec">
-          <label className="prop pair fill" htmlFor="prefix"><span>接頭辞</span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
-          <label className="prop pair fill" htmlFor="suffix"><span>接尾辞</span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="prefix"><span>{tr('接頭辞')}</span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="suffix"><span>{tr('接尾辞')}</span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
         </div>
         <div className="sec">
           <SignRows />
         </div>
         <div className="sec">
-          {sw('hidden', 'hidden', '非表示レイヤーを含む')}
-          {sw('tree2', 'tree', 'フォルダ階層を保持', 'lp', !layer)}
-          {sw('slFill', 'slFill', '透明部分を周囲の色で補完', 'sp', layer)}
-          {sw('allFiles', 'allFiles', '開いているファイルをすべて処理')}
+          {sw('hidden', 'hidden', tr('非表示レイヤーを含む'))}
+          {sw('tree2', 'tree', tr('フォルダ階層を保持'), 'lp', !layer)}
+          {sw('slFill', 'slFill', tr('透明部分を周囲の色で補完'), 'sp', layer)}
+          {sw('allFiles', 'allFiles', tr('開いているファイルをすべて処理'))}
         </div>
       </div>
       <div className="foot">
-        <div className="sumrow"><span id="sum" className="num">{`${t.summary.n * perTarget} ファイル`}{t.summary.w > 0 && <> · <span className="warn">{`警告あり ${t.summary.w}`}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
-        {sw('incWarn', 'incWarn', '警告のある画像も書き出す', undefined, !t.summary.w)}
+        <div className="sumrow"><span id="sum" className="num">{tr('{n} ファイル', { n: t.summary.n * perTarget })}{t.summary.w > 0 && <> · <span className="warn">{tr('警告あり {n}', { n: t.summary.w })}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
+        {sw('incWarn', 'incWarn', tr('警告のある画像も書き出す'), undefined, !t.summary.w)}
         <div className="act">
-          <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', '個別'], ['dir', 'フォルダ']]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
-          <button className="btn primary" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}>書き出し</button>
+          <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', tr('個別')], ['dir', tr('フォルダ|out')]]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
+          <button className="btn primary" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}>{tr('書き出し')}</button>
         </div>
       </div>
     </aside>

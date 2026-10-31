@@ -1,4 +1,6 @@
 // Save a blob: the Claude artifact downloads API when present, otherwise a regular download link.
+import { tr } from './i18n';
+
 export type SaveResult = 'ok' | 'declined' | 'failed';
 type DownloadsApi = { save(o: { filename: string; data: Blob }): Promise<unknown> };
 declare global { interface Window { claude?: { use?(name: string): Promise<DownloadsApi> } } }
@@ -12,4 +14,4 @@ export async function saveBlob(name: string, data: Blob): Promise<SaveResult> {
     catch (e: any) { if (e && e.code === 'rate_limited' && i < 8) { await new Promise(r => setTimeout(r, 1500)); continue; } return e && e.code === 'declined' ? 'declined' : 'failed'; }
   }
 }
-export const saveFailText = (r: SaveResult) => r === 'declined' ? '保存を取り消しました' : '保存できませんでした';
+export const saveFailText = (r: SaveResult) => tr(r === 'declined' ? '保存を取り消しました' : '保存できませんでした');

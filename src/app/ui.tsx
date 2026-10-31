@@ -2,13 +2,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { Status } from './image/exporter';
 import { setSign, useSign } from './sign';
+import { tr } from './i18n';
 
 // Empty preview: the whole stage opens the file picker; files can also be dropped anywhere.
 export function AddHint({ id, hidden }: { id?: string; hidden?: boolean }) {
   return (
     <span className="add" id={id} hidden={hidden}>
       <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
-      <span className="fine">クリックまたはドロップで追加</span><span className="coarse">タップして追加</span>
+      <span className="fine">{tr('クリックまたはドロップで追加')}</span><span className="coarse">{tr('タップして追加')}</span>
     </span>
   );
 }
@@ -91,13 +92,13 @@ export function SignRows() {
   const s = useSign();
   return <>
     <div className="prop signrow">
-      <span>署名</span>
-      <input className="t" type="text" aria-label="署名" value={s.text} onChange={e => { const text = e.target.value; setSign(!s.text.trim() && text.trim() ? { text, on: true } : { text }); }} onKeyDown={e => e.stopPropagation()} />
-      <label className="sw"><input type="checkbox" aria-label="署名を入れる" checked={s.on} onChange={e => setSign({ on: e.target.checked })} /></label>
+      <span>{tr('署名')}</span>
+      <input className="t" type="text" aria-label={tr('署名')} value={s.text} onChange={e => { const text = e.target.value; setSign(!s.text.trim() && text.trim() ? { text, on: true } : { text }); }} onKeyDown={e => e.stopPropagation()} />
+      <label className="sw"><input type="checkbox" aria-label={tr('署名を入れる')} checked={s.on} onChange={e => setSign({ on: e.target.checked })} /></label>
     </div>
     <div className="prop signopt" hidden={!s.on}><span></span><span className="unit">
-      <Seg value={s.size} options={[['s', '小'], ['m', '中'], ['l', '大']]} onChange={size => setSign({ size })} />
-      <Seg value={s.color} options={[['auto', '自動'], ['#ffffff', '白'], ['#000000', '黒']]} onChange={color => setSign({ color })} />
+      <Seg value={s.size} options={[['s', tr('小')], ['m', tr('中')], ['l', tr('大')]]} onChange={size => setSign({ size })} />
+      <Seg value={s.color} options={[['auto', tr('自動')], ['#ffffff', tr('白')], ['#000000', tr('黒')]]} onChange={color => setSign({ color })} />
     </span></div>
   </>;
 }
