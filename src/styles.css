@@ -167,6 +167,10 @@ button, select, input { font: inherit; color: inherit; }
 .gif .stage video, .gif .stage img { display: block; background-color: var(--chk-a);
   background-image: conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: 12px 12px; }
 .gempty { color: var(--muted); }
+.gif .stage.pick { cursor: pointer; }
+.gempty .coarse { display: none; }
+@media (pointer: coarse) { .gempty .fine { display: none; } .gempty .coarse { display: inline; } }
+.fi { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 .tl { flex: none; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--panel); }
 .tl .play { width: 28px; height: 28px; flex: none; border: 1px solid var(--line); background: var(--field); border-radius: 6px; display: grid; place-items: center; cursor: pointer; color: var(--fg); padding: 0; }
 .track { position: relative; flex: 1; height: 36px; border-radius: 4px; overflow: hidden; background: var(--field); cursor: pointer; touch-action: none; }
