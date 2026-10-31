@@ -2,6 +2,7 @@
 // `bump()` re-renders after an in-place change.
 import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import { type Doc, type Node, type Slice, type Snap, SRC_RE, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
+import { type Rect, detectPanels } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
 
@@ -89,6 +90,20 @@ export function useImageTool() {
     if (!doc || !doc.slices.length) return;
     edit(() => { doc.slices = []; doc.sliceSel = null; });
   }
+  // one slice per detected panel frame, in reading order; panels that already have a slice are skipped
+  function autoSlice() {
+    if (!doc) return;
+    const W = doc.psd.width, H = doc.psd.height, r = preview && !sel && preview.W === W && preview.H === H ? preview : renderNode(doc, null, o.hidden);
+    const found = detectPanels(r.rgba, r.W, r.H);
+    if (!found.length) { setStatus([{ t: '枠が見つかりません', c: 'warn' }]); return; }
+    const has = (p: Rect) => doc.slices.some(s => s.x === p.x && s.y === p.y && s.w === p.w && s.h === p.h);
+    const add = found.filter(p => !has(p));
+    if (add.length) edit(() => {
+      for (const p of add) doc.slices.push({ id: newSliceId(), name: nextSliceName(doc), ...p, on: true });
+      doc.sliceSel = doc.slices[doc.slices.length - add.length].id;
+    });
+    setStatus([{ t: `${add.length} 件のスライスを追加`, c: 'ok' }]);
+  }
   async function saveSlices() {
     if (!doc) return;
     if (!doc.slices.length) { setStatus([{ t: 'スライスがありません', c: 'err' }]); return; }
@@ -110,7 +125,7 @@ export function useImageTool() {
 
   return {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
-    openFiles, openSample, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, saveSlices, loadSlices,
+    openFiles, openSample, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
     begin, end, edit, undo: () => step(true), redo: () => step(false),
     accepts: (f: File) => SRC_RE.test(f.name),
   };
