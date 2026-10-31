@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useImageTool } from './image/useImageTool';
 import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { GifTool, isVideo, type GifToolApi } from './gif/GifTool';
-import { Seg } from './ui';
+import { Lbl, Seg } from './ui';
 import { setLang, tr, useLang } from './i18n';
 
 type Tool = 'img' | 'gif';
@@ -69,9 +69,9 @@ export function App() {
           ))}
         </div>
         <div className="bar-r">
-          <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}>{lang === 'ja' ? 'English' : '日本語'}</button>
-          <button className="btn img-only" onClick={() => fileRef.current!.click()}>{tr('開く')}</button>
-          <button className="btn gif-only" onClick={pickVideo}>{tr('開く')}</button>
+          <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></button>
+          <button className="btn img-only" onClick={() => fileRef.current!.click()}><Lbl>{tr('開く')}</Lbl></button>
+          <button className="btn gif-only" onClick={pickVideo}><Lbl>{tr('開く')}</Lbl></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />

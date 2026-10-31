@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { Status } from './image/exporter';
 import { setSign, useSign } from './sign';
-import { tr } from './i18n';
+import { otherOf, tr, trAlt } from './i18n';
 
 // Empty preview: the whole stage opens the file picker; files can also be dropped anywhere.
 export function AddHint({ id, hidden }: { id?: string; hidden?: boolean }) {
@@ -14,6 +14,15 @@ export function AddHint({ id, hidden }: { id?: string; hidden?: boolean }) {
   );
 }
 
+// Button text that keeps the width of its other-language version, so switching languages doesn't resize buttons.
+export function Lbl({ children, other }: { children: ReactNode; other?: string }) {
+  const o = other ?? (typeof children === 'string' ? otherOf(children) : undefined);
+  return o && o !== children ? <span className="dual"><span>{children}</span><span aria-hidden="true">{o}</span></span> : <>{children}</>;
+}
+
+// Hidden <option>s in the other language: a select is as wide as its widest option, hidden ones included.
+export const altOptions = (labels: [string, Record<string, string | number>?][]) => labels.map(([ja, v], i) => <option key={'alt' + i} hidden disabled>{trAlt(ja, v)}</option>);
+
 // Segmented control: one pressed button per value.
 export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden, disabled }: {
   id?: string; hidden?: boolean; disabled?: boolean; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; hiddenValues?: T[];
@@ -21,7 +30,7 @@ export function Seg<T extends string>({ id, value, options, onChange, hiddenValu
   return (
     <div className="seg" id={id} hidden={hidden}>
       {options.map(([v, label]) => (
-        <button key={v} data-v={v} aria-pressed={v === value} disabled={disabled} hidden={hiddenValues?.includes(v)} onClick={() => onChange(v)}>{label}</button>
+        <button key={v} data-v={v} aria-pressed={v === value} disabled={disabled} hidden={hiddenValues?.includes(v)} onClick={() => onChange(v)}><Lbl>{label}</Lbl></button>
       ))}
     </div>
   );
@@ -52,7 +61,7 @@ export function Pick<T extends string | number>({ id, label, value, options, onC
   return (
     <span className="pick" ref={ref}>
       <button id={id} className="pickb" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{cur ? cur[1] : ''}</span><svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <span><Lbl>{cur ? cur[1] : ''}</Lbl></span><svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
       {open && <div className="pickl" role="listbox" ref={list}>
         {options.map(([v, l, short]) => <button key={v} role="option" aria-selected={v === value} onClick={() => { onChange(v); setOpen(false); }}>{short ?? l}</button>)}
@@ -65,7 +74,7 @@ export function Pick<T extends string | number>({ id, label, value, options, onC
 export function Toggles<T extends string>({ id, values, options, onToggle }: { id?: string; values: T[]; options: [T, ReactNode][]; onToggle: (v: T) => void }) {
   return (
     <div className="seg" id={id}>
-      {options.map(([v, label]) => <button key={v} data-v={v} aria-pressed={values.includes(v)} onClick={() => onToggle(v)}>{label}</button>)}
+      {options.map(([v, label]) => <button key={v} data-v={v} aria-pressed={values.includes(v)} onClick={() => onToggle(v)}><Lbl>{label}</Lbl></button>)}
     </div>
   );
 }
@@ -92,7 +101,7 @@ export function SignRows() {
   const s = useSign();
   return <>
     <div className="prop signrow">
-      <span>{tr('署名')}</span>
+      <span><Lbl>{tr('署名')}</Lbl></span>
       <input className="t" type="text" aria-label={tr('署名')} value={s.text} onChange={e => { const text = e.target.value; setSign(!s.text.trim() && text.trim() ? { text, on: true } : { text }); }} onKeyDown={e => e.stopPropagation()} />
       <label className="sw"><input type="checkbox" aria-label={tr('署名を入れる')} checked={s.on} onChange={e => setSign({ on: e.target.checked })} /></label>
     </div>

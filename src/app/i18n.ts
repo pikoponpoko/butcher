@@ -18,11 +18,22 @@ export function setLang(l: Lang) {
 export const useLang = () => useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f); }, getLang);
 
 // tr('{n} ファイル', { n: 3 }) → '3 files' in English
+// tr() in the language not shown, for reserving width
+export function trAlt(ja: string, v?: Record<string, string | number>) {
+  cur = cur === 'en' ? 'ja' : 'en';
+  try { return tr(ja, v); } finally { cur = cur === 'en' ? 'ja' : 'en'; }
+}
 // A key may end in '|context' when one Japanese word needs two English ones.
 export function tr(ja: string, v?: Record<string, string | number>) {
   const base = ja.split('|')[0], s = cur === 'en' ? EN[ja] ?? base : base;
   return v ? s.replace(/\{(\w+)\}/g, (m, k) => k in v ? String(v[k]) : m) : s;
 }
+
+// The same text in the language not shown (for reserving width); undefined when it has no translation.
+// English words used for two Japanese ones (Custom, None) map back to the later key; pass Lbl `other` for the earlier one.
+export const otherOf = (s: string): string | undefined => cur === 'en' ? JA_OF()[s] : EN[s];
+let jaOf: Record<string, string> | null = null;
+const JA_OF = () => jaOf ||= Object.fromEntries(Object.entries(EN).map(([k, v]) => [v, k.split('|')[0]]));
 
 const EN: Record<string, string> = {
   // toolbar
