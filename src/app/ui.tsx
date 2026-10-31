@@ -3,6 +3,16 @@ import { useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { Status } from './image/exporter';
 import { setSign, useSign } from './sign';
 
+// Empty preview: the whole stage opens the file picker; files can also be dropped anywhere.
+export function AddHint({ id, hidden }: { id?: string; hidden?: boolean }) {
+  return (
+    <span className="add" id={id} hidden={hidden}>
+      <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+      <span className="fine">クリックまたはドロップで追加</span><span className="coarse">タップして追加</span>
+    </span>
+  );
+}
+
 // Segmented control: one pressed button per value.
 export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden, disabled }: {
   id?: string; hidden?: boolean; disabled?: boolean; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; hiddenValues?: T[];

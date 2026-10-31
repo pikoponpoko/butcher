@@ -74,7 +74,7 @@ export function App() {
         </div>
       </header>
       <LayersPanel t={t} round={round} setRound={setRound} fold={fold} setFold={setFold} />
-      <Stage t={t} round={round} />
+      <Stage t={t} round={round} onPick={() => fileRef.current!.click()} />
       <Inspector t={t} />
       <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} />
     </div>
