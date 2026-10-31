@@ -1,5 +1,7 @@
 // GIF / animated WebP / MP4 encoders. Encoders: gifenc (GIF), canvas WebP frames muxed into an
 // animated WebP here, WebCodecs + mp4-muxer (MP4). Libraries load on first export.
+import { tr } from '../i18n';
+
 export interface EncodeOpts { fps: number; loop: number; useAlpha: boolean }
 
 let gifLib: Promise<typeof import('gifenc')> | undefined, muxLib: Promise<typeof import('mp4-muxer')> | undefined;
@@ -64,7 +66,7 @@ export async function encodeWebp(frames: Uint8ClampedArray[], W: number, H: numb
     const len = data.reduce((a, d) => a + d.length, hdr.length), pay = new Uint8Array(len); let off = 0;
     pay.set(hdr, off); off += hdr.length; for (const d of data) { pay.set(d, off); off += d.length; }
     parts.push(chunk('ANMF', pay));
-    if (++i % 4 === 0) status(`WebP作成 ${f + 1}/${frames.length}`);
+    if (++i % 4 === 0) status(tr('WebP作成 {i}/{n}', { i: f + 1, n: frames.length }));
   }
   const vp8x = chunk('VP8X', new Uint8Array([0x02 | 0x10, 0, 0, 0, ...u24(W - 1), ...u24(H - 1)]));
   const loops = o.loop === 0 ? 0 : o.loop;
@@ -77,7 +79,7 @@ export async function encodeWebp(frames: Uint8ClampedArray[], W: number, H: numb
 // ---------- MP4 (H.264 via WebCodecs), streamed so long clips don't sit in memory
 export async function encodeMp4(W: number, H: number, fps: number, n: number, targetMB: number,
   capture: (onFrame: (i: number, n: number, c: OffscreenCanvas) => Promise<void>) => Promise<void>, status: (s: string) => void) {
-  if (typeof VideoEncoder === 'undefined') throw new Error('このブラウザはMP4書き出しに対応していません');
+  if (typeof VideoEncoder === 'undefined') throw new Error(tr('このブラウザはMP4書き出しに対応していません'));
   const M = await loadMux(), secs = n / fps;
   const bitrate = targetMB ? Math.max(100e3, targetMB * 8 * 1048576 / secs * 0.95) : Math.max(1e6, Math.min(20e6, W * H * fps * 0.12));
   let config: VideoEncoderConfig | null = null;
@@ -85,14 +87,14 @@ export async function encodeMp4(W: number, H: number, fps: number, n: number, ta
     const c: VideoEncoderConfig = { codec, width: W, height: H, bitrate, framerate: fps, avc: { format: 'avc' } };
     try { if ((await VideoEncoder.isConfigSupported(c)).supported) { config = c; break; } } catch {}
   }
-  if (!config) throw new Error('この解像度のMP4はこのブラウザで書き出せません');
+  if (!config) throw new Error(tr('この解像度のMP4はこのブラウザで書き出せません'));
   const muxer = new M.Muxer({ target: new M.ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
   let err: unknown = null;
   const enc = new VideoEncoder({ output: (ch, meta) => muxer.addVideoChunk(ch, meta), error: e => { err = e; } });
   enc.configure(config);
   await capture(async (i, n, c) => {
     if (err) throw err;
-    status(`MP4作成 ${i + 1}/${n}`);
+    status(tr('MP4作成 {i}/{n}', { i: i + 1, n }));
     const fr = new VideoFrame(c, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
     enc.encode(fr, { keyFrame: i % Math.round(fps * 2) === 0 }); fr.close();
     while (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));

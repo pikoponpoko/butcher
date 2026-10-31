@@ -2,6 +2,7 @@
 import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
 import { saveBlob, saveFailText } from '../save';
+import { tr } from '../i18n';
 import { drawSign, signReady } from '../sign';
 import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, nameOf, renderNode, safe, stem, targetsOf } from './model';
@@ -134,27 +135,27 @@ export const filesPerTarget = (o: Settings) => o.fmt === 'ico' ? 1 + FAVICON_PNG
 
 export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice | null): Promise<Status> {
   const r = renderNode(d, n, o.hidden), vs = variantsOf(o);
-  if (!vs.length) return [{ t: 'サイズを選んでください', c: 'err' }];
+  if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
   await signReady();
   const name = o.prefix + safe(s ? s.name : n ? nameOf(n) : stem(d.name)) + o.suffix, files: Encoded = [];
-  for (const v of vs) { const f = await encode(o, r.rgba, r.W, r.H, s, v); if (!f) return [{ t: '空の画像です', c: 'err' }]; files.push(...f); }
+  for (const v of vs) { const f = await encode(o, r.rgba, r.W, r.H, s, v); if (!f) return [{ t: tr('空の画像です'), c: 'err' }]; files.push(...f); }
   // a Favicon set goes out as one zip; SNS sizes are saved one by one
   if (o.fmt === 'ico') {
     const zip = new JSZip(); for (const f of files) zip.file(name + f.tail, f.blob);
     const res = await saveBlob(name + '.zip', await zip.generateAsync({ type: 'blob' })); if (res !== 'ok') return [{ t: saveFailText(res) }];
   } else for (const f of files) { const res = await saveBlob(name + f.tail, f.blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
-  return [{ t: `${files.length} ファイルを書き出し`, c: 'ok' }];
+  return [{ t: tr('{n} ファイルを書き出し', { n: files.length }), c: 'ok' }];
 }
 
 declare global { function showDirectoryPicker(o?: { mode?: string }): Promise<FileSystemDirectoryHandle> }
 // Returns the final status; `progress` reports per-file progress, `noDir` is called when folder output isn't available.
 export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void): Promise<Status> {
   const zip = new JSZip(), report: string[] = [], vs = variantsOf(o);
-  if (!vs.length) return [{ t: 'サイズを選んでください', c: 'err' }];
+  if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
   let dir: FileSystemDirectoryHandle | null = null;
   if (o.out === 'dir') {
     try { dir = await showDirectoryPicker({ mode: 'readwrite' }); }
-    catch (e: any) { if (e.name === 'AbortError') return [{ t: '保存を取り消しました' }]; noDir(); return [{ t: 'この環境ではフォルダに保存できません', c: 'err' }]; }
+    catch (e: any) { if (e.name === 'AbortError') return [{ t: tr('保存を取り消しました') }]; noDir(); return [{ t: tr('この環境ではフォルダに保存できません'), c: 'err' }]; }
   }
   let written = 0, skipped = 0;
   await signReady();
@@ -173,12 +174,12 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
         if (t.s) { let k = 2; const b = stemName; while (used.has(stemName)) stemName = `${b}_${k++}`; used.add(stemName); }
         const rel = o.mode === 'both' ? (t.kind === 'folder' ? 'folders/' : 'layers/') : '';
         const name0 = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : '')) + o.prefix + stemName + o.suffix;
-        if (ws.length) report.push(`${name0}\n` + ws.map(w => `  - ${w.path}: ${WARN_JA[w.type] || w.type}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
+        if (ws.length) report.push(`${name0}\n` + ws.map(w => `  - ${w.path}: ${tr(WARN_JA[w.type] || w.type)}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
         if (ws.length && !o.incWarn) { skipped++; continue; }
         const files: Encoded = [];
         for (const v of vs) {
           const f = await encode(o, r.rgba, r.W, r.H, t.s, v);
-          if (!f) { report.push(`${name0}${tagOf(v)}.${extOf(o, v)}\n  - 空の画像のため省略`); break; }
+          if (!f) { report.push(`${name0}${tagOf(v)}.${extOf(o, v)}\n  - ${tr('空の画像のため省略')}`); break; }
           files.push(...f);
         }
         for (const f of files) {
@@ -190,15 +191,15 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
         }
       }
     }
-    const done: Status = [{ t: `${written} ファイルを書き出し`, c: 'ok' }, ...(skipped ? [{ t: ' · ' }, { t: `${skipped} 件を省略`, c: 'warn' as const }] : [])];
-    const none: Status = [{ t: '書き出せる画像がありません', c: 'err' }];
+    const done: Status = [{ t: tr('{n} ファイルを書き出し', { n: written }), c: 'ok' }, ...(skipped ? [{ t: ' · ' }, { t: tr('{n} 件を省略', { n: skipped }), c: 'warn' as const }] : [])];
+    const none: Status = [{ t: tr('書き出せる画像がありません'), c: 'err' }];
     if (dir && report.length) await writeTo(dir, 'warnings.txt', new Blob([report.join('\n\n') + '\n']));
     if (o.out !== 'zip') return written ? done : none;
-    if (report.length) zip.file('warnings.txt', (skipped ? `警告のため書き出さなかった画像: ${skipped}\n\n` : '') + report.join('\n\n') + '\n');
+    if (report.length) zip.file('warnings.txt', (skipped ? tr('警告のため書き出さなかった画像: {n}', { n: skipped }) + '\n\n' : '') + report.join('\n\n') + '\n');
     if (!written) return none;
     const data = await zip.generateAsync({ type: 'blob' });
     const name = (docs.length > 1 ? 'psd-export' : safe(stem(docs[0].name))) + '.zip';
     const res = await saveBlob(name, data);
     return res === 'ok' ? done : [{ t: saveFailText(res) }];
-  } catch (e: any) { return [{ t: `エラー: ${String(e.message || e)}`, c: 'err' }]; }
+  } catch (e: any) { return [{ t: tr('エラー: {e}', { e: tr(String(e.message || e)) }), c: 'err' }]; }
 }

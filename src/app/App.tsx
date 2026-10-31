@@ -4,11 +4,13 @@ import { useImageTool } from './image/useImageTool';
 import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { GifTool, isVideo, type GifToolApi } from './gif/GifTool';
 import { Seg } from './ui';
+import { setLang, tr, useLang } from './i18n';
 
 type Tool = 'img' | 'gif';
 
 export function App() {
   const t = useImageTool();
+  const lang = useLang();
   const [tool, setTool] = useState<Tool>('img');
   const [round, setRound] = useState(false);
   const [fold, setFold] = useState(false);
@@ -55,20 +57,21 @@ export function App() {
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '')}>
       <header className="bar">
-        <Seg id="tool" value={tool} options={[['img', '画像'], ['gif', 'GIF・動画']]} onChange={setTool} />
+        <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')]]} onChange={setTool} />
         <div className="tabs img-only" id="tabs" role="tablist">
           {t.docs.map((d, i) => (
             <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
               <button className="tn" role="tab" title={d.name} aria-selected={i === t.cur} onClick={() => t.selectDoc(i)}>{d.name}</button>
-              <button className="tx" aria-label="閉じる" title="閉じる" onClick={() => t.closeDoc(i)}>
+              <button className="tx" aria-label={tr('閉じる')} title={tr('閉じる')} onClick={() => t.closeDoc(i)}>
                 <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 1l6 6M7 1 1 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
               </button>
             </div>
           ))}
         </div>
         <div className="bar-r">
-          <button className="btn img-only" onClick={() => fileRef.current!.click()}>開く</button>
-          <button className="btn gif-only" onClick={pickVideo}>開く</button>
+          <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}>{lang === 'ja' ? 'English' : '日本語'}</button>
+          <button className="btn img-only" onClick={() => fileRef.current!.click()}>{tr('開く')}</button>
+          <button className="btn gif-only" onClick={pickVideo}>{tr('開く')}</button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
