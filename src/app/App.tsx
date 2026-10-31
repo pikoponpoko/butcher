@@ -51,6 +51,19 @@ export function App() {
     return () => { removeEventListener('dragenter', enter); removeEventListener('dragover', over); removeEventListener('drop', drop); };
   }, []);
 
+  useEffect(() => {
+    // opened from the share menu of another app: sw.js stored the video, hand it to the GIF・動画 tool
+    if (!new URLSearchParams(location.search).has('share')) return;
+    history.replaceState(null, '', location.pathname);
+    (async () => {
+      const c = await caches.open('butcher-share'), r = await c.match('./shared');
+      if (!r) return;
+      await c.delete('./shared');
+      const f = new File([await r.blob()], decodeURIComponent(r.headers.get('x-name') || 'video'), { type: r.headers.get('content-type') || '' });
+      live.current.setTool('gif'); gif.current?.open(f);
+    })().catch(() => {});
+  }, []);
+
   const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null);
   const pickVideo = () => gFileRef.current!.click();
   const [gifSt, setGifSt] = useState({ open: false, ready: false });
