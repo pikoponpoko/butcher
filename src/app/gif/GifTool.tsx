@@ -562,7 +562,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
         </div>
         <div className="status">
           <span id="gName">{s.v ? `${s.name}  ${s.sw}×${s.sh}` : ''}</span>
-          {cr && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
+          {cr && !showRes && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
           <span id="gOut" className="num" style={{ marginLeft: 'auto' }}>{s.result ? fmtMB(s.result.size) : ''}</span>
           <Seg id="gView" hidden={!s.result} value={s.view} options={[['src', '元'], ['res', '結果']]} onChange={setView} />
           <button className="link" id="gSave" hidden={!s.result} onClick={saveResult}>保存</button>
@@ -570,17 +570,17 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
       </main>
       <aside className="panel inspector" aria-label="GIF書き出し設定">
         <div className="insp">
-          <div className="sec">
+          <div className="sec" id="gHeadSec">
             <div className="prop use"><Seg id="gUse" value={u} options={[['custom', 'カスタム'], ['web', 'Web'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={setUse} /></div>
             <div className="prop" id="gFmtRow" hidden={u === 'wp'}><span>形式</span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]}
               hiddenValues={u === 'web' ? ['mp4'] : u === 'sns' ? ['webp'] : u === 'wp' ? ['gif', 'webp'] : []} onChange={setFmt} /></div>
+            <div className="prop use" id="gRatioRow" hidden={sets}><Seg id="gRatio" value={s.ratio} options={RATIOS} onChange={setRatio} /></div>
           </div>
           <div className="sec">
             {sets && SERVICES[u].filter(([svc]) => !(s.fmt === 'gif' && svc === 'ig')).map(([svc, label]) => (
               <div key={svc} className="prop ps"><span>{label}</span>
                 <Toggles id={'gPs-' + svc} values={s.picks} options={VIDEO_PRESETS.filter(x => x.svc === svc && (s.fmt !== 'gif' || X_GIF[x.id])).map(x => [x.id, x.label])} onToggle={id => { s.picks = toggleId(s.picks, id); presetPreview(); changed(); }} /></div>
             ))}
-            <div className="prop use" id="gRatioRow" hidden={sets}><Seg id="gRatio" value={s.ratio} options={RATIOS} onChange={setRatio} /></div>
             <div className="prop pair" hidden={sets}><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
               onDraft={num('w', val => { const w = Math.max(1, Math.min(4096, Math.round(val))); s.w = w; lockFromW(); return w; })} />px</span></div>
             <div className="prop pair" hidden={sets}><span>高さ</span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
