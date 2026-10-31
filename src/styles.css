@@ -63,7 +63,8 @@ button, select, input { font: inherit; color: inherit; }
 .rn { flex: 1; min-width: 0; height: 24px; border: 1px solid var(--accent); border-radius: 4px; background: var(--field); padding: 0 6px; outline: none; }
 .tw { width: 16px; height: 16px; flex: none; display: grid; place-items: center; color: var(--muted); border: 0; background: none; padding: 0; cursor: pointer; }
 .tw svg { transition: transform .12s; } .tw.closed svg { transform: rotate(-90deg); }
-.eye { width: 16px; flex: none; color: var(--muted); display: grid; place-items: center; }
+.eye { width: 16px; height: 34px; flex: none; color: var(--muted); display: grid; place-items: center; border: 0; background: none; padding: 0; cursor: pointer; }
+.eye:hover { color: var(--fg); }
 .row.hid .eye { opacity: .35; }
 .thumb { width: 26px; height: 26px; flex: none; border-radius: 3px; border: 1px solid var(--line); background-color: var(--chk-a);
   background-image: conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: 6px 6px; }

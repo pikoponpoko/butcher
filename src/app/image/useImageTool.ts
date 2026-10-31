@@ -1,7 +1,7 @@
 // Image tool state. Documents are large mutable objects (parsed PSD trees), so they stay mutable and
 // `bump()` re-renders after an in-place change.
 import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
-import { type Doc, type Node, type Slice, type Snap, SRC_RE, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
+import { type Doc, type Node, type Slice, type Snap, SRC_RE, hiddenKey, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
 import { type Rect, detectPanels } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
@@ -27,12 +27,13 @@ export function useImageTool() {
   const doc = docs[cur] as Doc | undefined;
   const set = useCallback(<K extends keyof Settings>(k: K, v: Settings[K]) => setO(p => ({ ...p, [k]: v })), []);
 
+  const hid = doc ? hiddenKey(doc) : '';
   const preview = useMemo(() => {
     if (!doc) return null;
     const t0 = performance.now();
     const r = renderNode(doc, sel, o.hidden);
     return { ...r, ms: Math.round(performance.now() - t0) };
-  }, [doc, sel, o.hidden]);
+  }, [doc, sel, o.hidden, hid]);
 
   const summary = useMemo(() => summarize(o.allFiles ? docs : doc ? [doc] : [], o.mode, o.hidden),
     [doc, o.allFiles, o.mode, o.hidden, ver, docs.length]);
