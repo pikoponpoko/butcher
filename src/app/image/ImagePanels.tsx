@@ -467,7 +467,6 @@ export function Inspector({ t }: { t: ImageTool }) {
         {sw('incWarn', 'incWarn', tr('警告のある画像も書き出す'), undefined, !t.summary.w)}
         <div className="act">
           <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', tr('個別')], ['dir', tr('フォルダ|out')]]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
-          <button className="btn primary" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}><Lbl>{tr('書き出し')}</Lbl></button>
         </div>
       </div>
     </aside>

@@ -149,6 +149,8 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .seg button:hover:not(:disabled) { color: var(--fg); }
 .seg button:disabled { opacity: .5; cursor: default; }
 .seg button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--line); font-weight: 500; }
+/* preset sizes: buttons share the row so five fit */
+.prop.ps > .seg { display: flex; width: auto; justify-self: stretch; } .prop.ps > .seg button { flex: 1 1 auto; padding: 0 4px; }
 .kv { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 8px; }
 @media (min-width: 1101px) {
   #mode, #fmt, #size { grid-column: 2 / -1; display: flex; width: auto; justify-self: stretch; }

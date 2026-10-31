@@ -37,7 +37,7 @@ const JA_OF = () => jaOf ||= Object.fromEntries(Object.entries(EN).map(([k, v]) 
 
 const EN: Record<string, string> = {
   // toolbar
-  '画像': 'Image', 'GIF・動画': 'GIF/Video', '開く': 'Open', '閉じる': 'Close', 'クリックまたはドロップで追加': 'Click or drop to add', 'タップして追加': 'Tap to add',
+  '画像': 'Image', 'GIF・動画': 'GIF/Video', '開く': 'Open', '閉じる': 'Close', '追加': 'Add', 'クリックまたはドロップで追加': 'Click or drop to add', 'タップして追加': 'Tap to add',
   // layers / slices
   'レイヤー': 'Layers', 'スライス': 'Slices', 'すべて': 'All', '解除': 'None', '自動': 'Auto', '読込': 'Load', '保存': 'Save', '全削除': 'Delete all', '畳む': 'Collapse',
   '表示': 'Show', '非表示': 'Hide', '開閉': 'Expand', '元の名前：{n}': 'Original name: {n}', '(名前なし)': '(Untitled)', 'クリップ': 'Clip', '警告': 'Warning',
@@ -72,7 +72,7 @@ const EN: Record<string, string> = {
   'この種類のレイヤーは未検証': 'Layer type unverified', 'タイル配置を読み取れません': 'Can’t read the tile layout', 'この色形式は未対応': 'Unsupported color format',
   // GIF / video
   'GIF書き出し設定': 'GIF export settings', '元': 'Orig', '自由': 'Free', '結果': 'Result', 'カスタム': 'Custom', '再生': 'Play', '停止': 'Pause', '透明': 'Clear', '背景': 'Background',
-  '範囲': 'Range', '開始': 'Start', '終了': 'End', '秒': 's', '速度': 'Speed', 'ループ': 'Loop', '無限': 'Forever', '1回': 'Once', '2回': '2 times', '3回': '3 times',
+  '範囲': 'Range', '開始': 'Start', '終了': 'End', '秒': 's', '速度': 'Speed', 'ループ': 'Loop', '無限': 'Forever', '1回': 'Once', '2回': '2 times', '3回': '3 times', '回': 'times',
   '目標サイズ': 'Target size', 'なし': 'None', 'ドット': 'Pixel', 'ドットの大きさ': 'Pixel size', '色数': 'Colors', '{n}色': '{n} colors', '設定': 'Preset',
   '設定を読込': 'Preset loaded', '設定を読み込めません': 'Can’t load preset', 'このまま保存': 'Save anyway',
   '{n} フレーム': '{n} frames', '{s}秒': '{s}s', '{n} フレームを超えています': 'Over {n} frames', 'GIFは50fpsまで': 'GIF max 50 fps',

@@ -77,10 +77,11 @@ export async function encodeWebp(frames: Uint8ClampedArray[], W: number, H: numb
 }
 
 // ---------- MP4 (H.264 via WebCodecs), streamed so long clips don't sit in memory
+// reps > 1: the clip's encoded frames are written again back to back (MP4 has no loop flag).
 export async function encodeMp4(W: number, H: number, fps: number, n: number, targetMB: number,
-  capture: (onFrame: (i: number, n: number, c: OffscreenCanvas) => Promise<void>) => Promise<void>, status: (s: string) => void) {
+  capture: (onFrame: (i: number, n: number, c: OffscreenCanvas) => Promise<void>) => Promise<void>, status: (s: string) => void, reps = 1) {
   if (typeof VideoEncoder === 'undefined') throw new Error(tr('このブラウザはMP4書き出しに対応していません'));
-  const M = await loadMux(), secs = n / fps;
+  const M = await loadMux(), secs = n / fps * reps;
   const bitrate = targetMB ? Math.max(100e3, targetMB * 8 * 1048576 / secs * 0.95) : Math.max(1e6, Math.min(20e6, W * H * fps * 0.12));
   let config: VideoEncoderConfig | null = null;
   for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.42e033', 'avc1.640028', 'avc1.42e01f']) {
@@ -90,7 +91,14 @@ export async function encodeMp4(W: number, H: number, fps: number, n: number, ta
   if (!config) throw new Error(tr('この解像度のMP4はこのブラウザで書き出せません'));
   const muxer = new M.Muxer({ target: new M.ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
   let err: unknown = null;
-  const enc = new VideoEncoder({ output: (ch, meta) => muxer.addVideoChunk(ch, meta), error: e => { err = e; } });
+  const kept: { data: Uint8Array; type: EncodedVideoChunkType; ts: number; dur: number }[] = [];
+  const enc = new VideoEncoder({
+    output: (ch, meta) => {
+      muxer.addVideoChunk(ch, meta);
+      if (reps > 1) { const data = new Uint8Array(ch.byteLength); ch.copyTo(data); kept.push({ data, type: ch.type, ts: ch.timestamp, dur: ch.duration ?? 0 }); }
+    },
+    error: e => { err = e; },
+  });
   enc.configure(config);
   await capture(async (i, n, c) => {
     if (err) throw err;
@@ -99,6 +107,9 @@ export async function encodeMp4(W: number, H: number, fps: number, n: number, ta
     enc.encode(fr, { keyFrame: i % Math.round(fps * 2) === 0 }); fr.close();
     while (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));
   });
-  await enc.flush(); if (err) throw err; enc.close(); muxer.finalize();
+  await enc.flush(); if (err) throw err; enc.close();
+  // each pass starts on the clip's first frame, which is a key frame
+  for (let r = 1; r < reps; r++) { const off = Math.round(r * n * 1e6 / fps); for (const k of kept) muxer.addVideoChunkRaw(k.data, k.type, k.ts + off, k.dur); }
+  muxer.finalize();
   return new Blob([muxer.target.buffer], { type: 'video/mp4' });
 }
