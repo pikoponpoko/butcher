@@ -6,9 +6,11 @@ export interface EncodeOpts { fps: number; loop: number; useAlpha: boolean }
 
 let gifLib: Promise<typeof import('gifenc')> | undefined, muxLib: Promise<typeof import('mp4-muxer')> | undefined;
 let gifNow: typeof import('gifenc') | undefined;
-export const loadGif = () => gifLib ||= import('gifenc').then(m => (gifNow = m));
+// a chunk that can't be fetched usually means the app was updated while this page stayed open
+const stale = () => { throw new Error(tr('アプリが更新されました。ページを再読み込みしてください')); };
+export const loadGif = () => gifLib ||= import('gifenc').then(m => (gifNow = m), () => { gifLib = undefined; return stale(); });
 export const gifLibNow = () => gifNow; // sync access once loaded, for per-frame previews
-const loadMux = () => muxLib ||= import('mp4-muxer');
+const loadMux = () => muxLib ||= import('mp4-muxer').catch(() => { muxLib = undefined; return stale(); });
 
 // ---------- GIF
 export async function encodeGif(frames: Uint8ClampedArray[], W: number, H: number, colors: number, step: number, o: EncodeOpts) {
