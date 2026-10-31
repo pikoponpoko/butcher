@@ -57,7 +57,14 @@ export function App() {
       <header className="bar">
         <Seg id="tool" value={tool} options={[['img', '画像'], ['gif', 'GIF・動画']]} onChange={setTool} />
         <div className="tabs img-only" id="tabs" role="tablist">
-          {t.docs.map((d, i) => <button key={i} className="tab" role="tab" title={d.name} aria-selected={i === t.cur} onClick={() => t.selectDoc(i)}>{d.name}</button>)}
+          {t.docs.map((d, i) => (
+            <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
+              <button className="tn" role="tab" title={d.name} aria-selected={i === t.cur} onClick={() => t.selectDoc(i)}>{d.name}</button>
+              <button className="tx" aria-label="閉じる" title="閉じる" onClick={() => t.closeDoc(i)}>
+                <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 1l6 6M7 1 1 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+              </button>
+            </div>
+          ))}
         </div>
         <div className="bar-r">
           <button className="btn img-only" onClick={() => fileRef.current!.click()}>開く</button>

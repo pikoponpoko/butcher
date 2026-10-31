@@ -66,6 +66,11 @@ export function useImageTool() {
     bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
+  function closeDoc(i: number) {
+    docs.splice(i, 1);
+    if (i <= cur) { const c = Math.max(0, i < cur ? cur - 1 : Math.min(cur, docs.length - 1)); setCur(c); if (i === cur) setSel(null); }
+    setStatus([]); bump();
+  }
 
   async function doExport() {
     setBusy(true);
@@ -121,7 +126,7 @@ export function useImageTool() {
 
   return {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
-    openFiles, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
+    openFiles, selectDoc, closeDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
     begin, end, edit, undo: () => step(true), redo: () => step(false),
     accepts: (f: File) => SRC_RE.test(f.name),
   };

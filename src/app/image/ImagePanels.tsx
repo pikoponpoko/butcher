@@ -151,10 +151,16 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const drag = useRef<Drag | null>(null), bounds = useRef({ x0: 0, y0: 0, x1: 1, y1: 1 });
   // touch: 2-finger tap = undo, 3-finger tap = redo, a second finger during a slice drag = Shift + Alt.
   // A touch drag starts only after the finger moves, so a multi-finger tap never edits a slice.
-  const touches = useRef(new Map<number, { x: number; y: number }>()).current;
+  const touches = useRef(new Map<number, { x: number; y: number }>()).current, at = useRef(new Map<number, { x: number; y: number }>()).current;
   const gest = useRef({ max: 0, t0: 0, moved: false, cancel: false });
   const pend = useRef<{ id: number; target: Element; p: { x: number; y: number } } | null>(null);
   const d = t.doc, pv = t.preview, slicing = t.pane === 'slice';
+  // zoom: null = fit. Otherwise K screen px per image px, canvas top-left at (L, T) inside the stage.
+  // Pinch / Ctrl+wheel zooms, two fingers (or one finger / mouse drag outside slice mode) pan.
+  type View = { K: number; L: number; T: number };
+  const [view, setView] = useState<View | null>(null);
+  const pinch = useRef<{ d0: number; m0: { x: number; y: number }; v0: View } | null>(null);
+  const pan = useRef<{ id: number; x: number; y: number; v0: View } | null>(null);
 
   useLayoutEffect(() => {
     const s = stageRef.current!;
@@ -185,15 +191,58 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   }
   const { x0, y0, x1, y1 } = bounds.current;
   const fit = avail.w > 0 && avail.h > 0 && pv ? Math.min(avail.w / (x1 - x0), avail.h / (y1 - y0), 8) : 0;
-  const dw = Math.floor(W * fit), dh = Math.floor(H * fit), k = dw / W;
-  const cvStyle: CSSProperties | undefined = fit ? { transform: `translate(${Math.round(((W - x1) - x0) * fit / 2)}px, ${Math.round(((H - y1) - y0) * fit / 2)}px)` } : undefined;
+  const zoom = fit ? view : null;
+  const dw = zoom ? W * zoom.K : Math.floor(W * fit), dh = zoom ? H * zoom.K : Math.floor(H * fit), k = dw / W;
+  const cvStyle: CSSProperties | undefined = zoom ? { position: 'absolute', left: 0, top: 0, transform: `translate(${zoom.L}px, ${zoom.T}px)` }
+    : fit ? { transform: `translate(${Math.round(((W - x1) - x0) * fit / 2)}px, ${Math.round(((H - y1) - y0) * fit / 2)}px)` } : undefined;
+  useEffect(() => { setView(null); pinch.current = pan.current = null; }, [d, avail.w, avail.h]);
+
+  // current view read from the DOM (also works while fitted), positions relative to the stage
+  const local = (x: number, y: number) => { const r = stageRef.current!.getBoundingClientRect(); return { x: x - r.left, y: y - r.top }; };
+  function viewNow(): View {
+    const c = pvRef.current!.getBoundingClientRect(), o = local(c.left, c.top);
+    return { K: c.width / W, L: o.x, T: o.y };
+  }
+  // keep the content (canvas + slices) inside the stage: centered when smaller, no gaps when larger
+  function clampView(v: View): View {
+    const s = stageRef.current!, sw = s.clientWidth, sh = s.clientHeight, b = bounds.current;
+    const ax = (lo: number, hi: number, size: number, at: number) => { const a = lo * v.K, z = (hi - lo) * v.K; return z <= size ? (size - z) / 2 - a : Math.min(-a, Math.max(size - z - a, at)); };
+    return { K: v.K, L: ax(b.x0, b.x1, sw, v.L), T: ax(b.y0, b.y1, sh, v.T) };
+  }
+  function zoomAt(v0: View, K: number, m0: { x: number; y: number }, m: { x: number; y: number }) {
+    K = Math.max(fit, Math.min(Math.max(fit, 32), K));
+    const r = K / v0.K; setView(clampView({ K, L: m.x - (m0.x - v0.L) * r, T: m.y - (m0.y - v0.T) * r }));
+  }
+  const settle = () => setView(v => v && v.K <= fit * 1.02 ? null : v);
+  function startPinch() {
+    const [a, b] = [...at.values()], v0 = viewNow();
+    pinch.current = { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), m0: local((a.x + b.x) / 2, (a.y + b.y) / 2), v0 };
+    pend.current = null; pan.current = null;
+  }
+  useEffect(() => {
+    // trackpad pinch arrives as Ctrl+wheel; a plain wheel pans while zoomed
+    const s = stageRef.current!;
+    const wheel = (e: WheelEvent) => {
+      if (!fit) return;
+      if (e.ctrlKey) {
+        e.preventDefault(); const v0 = viewNow(), m = local(e.clientX, e.clientY);
+        zoomAt(v0, v0.K * Math.exp(-e.deltaY * 0.01), m, m); clearTimeout(wt); wt = setTimeout(settle, 200);
+      } else if (zoom) { e.preventDefault(); setView(v => v && clampView({ K: v.K, L: v.L - e.deltaX, T: v.T - e.deltaY })); }
+    };
+    let wt = 0 as unknown as ReturnType<typeof setTimeout>;
+    // two-finger moves never scroll the page; one finger pans the image while zoomed
+    const tmove = (e: TouchEvent) => { if (e.touches.length >= 2 || pan.current) e.preventDefault(); };
+    s.addEventListener('wheel', wheel, { passive: false }); s.addEventListener('touchmove', tmove, { passive: false });
+    return () => { s.removeEventListener('wheel', wheel); s.removeEventListener('touchmove', tmove); clearTimeout(wt); };
+  });
 
   // signature preview: an overlay over the fitted bounds, drawn into each box that will be exported
   const bb = pv ? PsdCore.alphaBounds(pv.rgba, pv.W, pv.H) : null;
   useEffect(() => { signReady(sign).then(() => fontBump(x => x + 1)); }, [sign]);
   useLayoutEffect(() => {
     const c = sgRef.current!, on = signActive(sign) && fit > 0 && !!d;
-    const dpr = devicePixelRatio || 1, cw = on ? Math.round((x1 - x0) * fit * dpr) : 1, ch = on ? Math.round((y1 - y0) * fit * dpr) : 1;
+    // while zoomed the overlay resolution is capped so the canvas stays within browser limits
+    const dpr = Math.min(devicePixelRatio || 1, 4096 / Math.max(1, (x1 - x0) * k, (y1 - y0) * k)), cw = on ? Math.round((x1 - x0) * k * dpr) : 1, ch = on ? Math.round((y1 - y0) * k * dpr) : 1;
     if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
     const ctx = c.getContext('2d')!; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cw, ch);
     if (!on) return;
@@ -228,8 +277,12 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
     const touch = e.pointerType === 'touch';
     if (touch) {
       if (!touches.size) gest.current = { max: 0, t0: performance.now(), moved: false, cancel: false };
-      touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); gest.current.max = Math.max(gest.current.max, touches.size);
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); at.set(e.pointerId, { x: e.clientX, y: e.clientY }); gest.current.max = Math.max(gest.current.max, touches.size);
       e.currentTarget.setPointerCapture(e.pointerId);
+      if (fit && touches.size === 2 && !drag.current) startPinch(); else pinch.current = null;
+    }
+    if (fit && zoom && (!slicing || !d) && e.button === 0 && touches.size <= 1 && !(e.target as Element).closest('.warnbox')) {
+      pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY, v0: zoom }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); return;
     }
     if (!slicing || !d || e.button !== 0 || (e.target as Element).closest('.warnbox')) return;
     if (touch) { if (touches.size === 1 && !drag.current) pend.current = { id: e.pointerId, target: e.target as Element, p: pt(e) }; e.preventDefault(); return; }
@@ -242,6 +295,16 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       gest.current.moved = true;
       const pd = pend.current; if (pd && pd.id === e.pointerId) { pend.current = null; startDrag(pd.id, pd.target, pd.p); }
     }
+    const pc = pinch.current;
+    if (t0) at.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pc && t0) {
+      if (!gest.current.moved) return;
+      const [a, b] = [...at.values()];
+      zoomAt(pc.v0, pc.v0.K * Math.hypot(a.x - b.x, a.y - b.y) / pc.d0, pc.m0, local((a.x + b.x) / 2, (a.y + b.y) / 2));
+      return;
+    }
+    const pn = pan.current;
+    if (pn && pn.id === e.pointerId) { setView(clampView({ K: pn.v0.K, L: pn.v0.L + e.clientX - pn.x, T: pn.v0.T + e.clientY - pn.y })); return; }
     const g = drag.current; if (!g || !d || g.id !== e.pointerId) return;
     // Shift keeps the aspect ratio, Alt anchors on the center
     const shift = e.shiftKey || touches.size >= 2, alt = e.altKey || touches.size >= 2;
@@ -295,6 +358,9 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
     t.sliceChanged();
   }
   function up(e: RPointerEvent) {
+    if (pan.current?.id === e.pointerId) pan.current = null;
+    if (touches.has(e.pointerId) && pinch.current) { pinch.current = null; settle(); }
+    at.delete(e.pointerId);
     if (touches.delete(e.pointerId)) {
       if (e.type === 'pointercancel') gest.current.cancel = true;
       if (pend.current?.id === e.pointerId) pend.current = null;
@@ -321,7 +387,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const sc = slicing ? curSlice(d) : null;
   return (
     <main className="center">
-      <div className={'stage' + (slicing ? ' slicing' : '')} id="stage" ref={stageRef} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '')} id="stage" ref={stageRef} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <div className="cv" style={cvStyle}>
           <canvas id="pv" ref={pvRef} width="1" height="1" hidden={!pv} style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">
