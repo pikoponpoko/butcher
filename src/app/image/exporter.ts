@@ -6,13 +6,14 @@ import { drawSign, signReady } from '../sign';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
-  mode: Mode; fmt: 'png' | 'jpeg' | 'webp'; quality: string; size: 'orig' | 'w' | 'h'; px: string; basis: 'canvas' | 'image'; trim: boolean;
+  mode: Mode; fmt: 'png' | 'jpeg' | 'webp' | 'ico'; quality: string; size: 'orig' | 'w' | 'h'; px: string; basis: 'canvas' | 'image'; trim: boolean;
   prefix: string; suffix: string; hidden: boolean; tree: boolean; slFill: boolean; allFiles: boolean; incWarn: boolean; out: 'zip' | 'each' | 'dir';
 }
 // Status line in the inspector footer: plain text or colored parts.
 export type StatusPart = { t: string; c?: 'ok' | 'warn' | 'err' };
 export type Status = StatusPart[];
 
+const extOf = (o: Settings) => o.fmt === 'jpeg' ? 'jpg' : o.fmt;
 function toCanvas(rgba: Uint8ClampedArray, W: number, H: number) { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d')!.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, W, H), 0, 0); return c; }
 export { toCanvas };
 
@@ -47,10 +48,15 @@ function fillTransparent(px: Uint8ClampedArray, w: number, h: number) {
     px[p] = px[p] * k + c[0] * (1 - k); px[p + 1] = px[p + 1] * k + c[1] * (1 - k); px[p + 2] = px[p + 2] * k + c[2] * (1 - k); px[p + 3] = 255;
   }
 }
-async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null) {
+// Encoded files for one image: `tail` follows the file stem (".png", or for Favicon ".ico" / "-180.png" ...).
+type Encoded = { tail: string; blob: Blob }[];
+const ICO_SIZES = [16, 32, 48], FAVICON_PNG = [180, 192, 512];
+
+async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null): Promise<Encoded | null> {
   let c = toCanvas(rgba, W, H), x = 0, y = 0, w = W, h = H;
   if (crop) { c = toCanvas(cropPixels(rgba, W, H, crop, o.slFill), crop.w, crop.h); w = crop.w; h = crop.h; }
   else if (o.trim) { const b = PsdCore.alphaBounds(rgba, W, H); if (!b) return null; ({ x, y, w, h } = b); }
+  if (o.fmt === 'ico') return favicon(c, x, y, w, h);
   const px = Math.max(1, +o.px || 1);
   const s = o.size === 'orig' ? 1 : o.basis === 'canvas' ? px / (o.size === 'w' ? W : H) : px / (o.size === 'w' ? w : h);
   const out = document.createElement('canvas'); out.width = Math.max(1, Math.round(w * s)); out.height = Math.max(1, Math.round(h * s));
@@ -59,29 +65,56 @@ async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number
   ctx.drawImage(c, x, y, w, h, 0, 0, out.width, out.height);
   drawSign(ctx, 0, 0, out.width, out.height);
   const q = Math.min(100, Math.max(1, +o.quality || 90)) / 100;
-  return await new Promise<Blob | null>(res => out.toBlob(res, 'image/' + o.fmt, q));
+  const blob = await new Promise<Blob | null>(res => out.toBlob(res, 'image/' + o.fmt, q));
+  return blob && [{ tail: '.' + extOf(o), blob }];
+}
+const pngBlob = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('PNG')), 'image/png'));
+// Favicon set: the region fitted (centered, transparent margin) into a square, as a 16/32/48 .ico and 180/192/512 PNGs.
+async function favicon(c: HTMLCanvasElement, x: number, y: number, w: number, h: number): Promise<Encoded> {
+  const side = Math.max(w, h), sq = document.createElement('canvas'); sq.width = sq.height = side;
+  sq.getContext('2d')!.drawImage(c, x, y, w, h, (side - w) >> 1, (side - h) >> 1, w, h);
+  const at = async (n: number) => {
+    const out = document.createElement('canvas'); out.width = out.height = n;
+    const ctx = out.getContext('2d')!; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(sq, 0, 0, n, n);
+    return pngBlob(out);
+  };
+  const ico = await Promise.all(ICO_SIZES.map(at));
+  return [{ tail: '.ico', blob: await icoFile(ico, ICO_SIZES) }, ...await Promise.all(FAVICON_PNG.map(async n => ({ tail: `-${n}.png`, blob: await at(n) })))];
+}
+// ICO container with PNG-compressed entries.
+export async function icoFile(pngs: Blob[], sizes: number[]) {
+  const head = new DataView(new ArrayBuffer(6 + 16 * pngs.length));
+  head.setUint16(2, 1, true); head.setUint16(4, pngs.length, true);
+  let off = head.byteLength;
+  pngs.forEach((p, i) => {
+    const e = 6 + 16 * i, n = sizes[i] >= 256 ? 0 : sizes[i];
+    head.setUint8(e, n); head.setUint8(e + 1, n); head.setUint16(e + 4, 1, true); head.setUint16(e + 6, 32, true);
+    head.setUint32(e + 8, p.size, true); head.setUint32(e + 12, off, true); off += p.size;
+  });
+  return new Blob([head.buffer, ...pngs], { type: 'image/x-icon' });
 }
 async function writeTo(dir: FileSystemDirectoryHandle, path: string, blob: Blob) {
   const parts = path.split('/'), file = parts.pop()!;
   for (const p of parts) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(file, { create: true })).createWritable(); await w.write(blob); await w.close();
 }
-const extOf = (o: Settings) => o.fmt === 'jpeg' ? 'jpg' : o.fmt;
 
 export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice | null): Promise<Status> {
   const r = renderNode(d, n, o.hidden);
   await signReady();
-  const blob = await encode(o, r.rgba, r.W, r.H, s);
-  if (!blob) return [{ t: '空の画像です', c: 'err' }];
-  const base = s ? s.name : n ? nameOf(n) : stem(d.name);
-  const res = await saveBlob(o.prefix + safe(base) + o.suffix + '.' + extOf(o), blob);
-  return res === 'ok' ? [{ t: '1 ファイルを書き出し', c: 'ok' }] : [{ t: saveFailText(res) }];
+  const files = await encode(o, r.rgba, r.W, r.H, s);
+  if (!files) return [{ t: '空の画像です', c: 'err' }];
+  const name = o.prefix + safe(s ? s.name : n ? nameOf(n) : stem(d.name)) + o.suffix;
+  let res;
+  if (files.length === 1) res = await saveBlob(name + files[0].tail, files[0].blob);
+  else { const zip = new JSZip(); for (const f of files) zip.file(name + f.tail, f.blob); res = await saveBlob(name + '.zip', await zip.generateAsync({ type: 'blob' })); }
+  return res === 'ok' ? [{ t: `${files.length} ファイルを書き出し`, c: 'ok' }] : [{ t: saveFailText(res) }];
 }
 
 declare global { function showDirectoryPicker(o?: { mode?: string }): Promise<FileSystemDirectoryHandle> }
 // Returns the final status; `progress` reports per-file progress, `noDir` is called when folder output isn't available.
 export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void): Promise<Status> {
-  const zip = new JSZip(), report: string[] = [], ext = extOf(o);
+  const zip = new JSZip(), report: string[] = [];
   let dir: FileSystemDirectoryHandle | null = null;
   if (o.out === 'dir') {
     try { dir = await showDirectoryPicker({ mode: 'readwrite' }); }
@@ -102,17 +135,19 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
         const ws = dedupe(r.warnings.filter(w => w.type !== 'text'));
         let stemName = safe(t.s ? t.s.name : nameOf(t.n));
         if (t.s) { let k = 2; const b = stemName; while (used.has(stemName)) stemName = `${b}_${k++}`; used.add(stemName); }
-        const fname = o.prefix + stemName + o.suffix + '.' + ext;
+        const fname = o.prefix + stemName + o.suffix;
         const rel = o.mode === 'both' ? (t.kind === 'folder' ? 'folders/' : 'layers/') : '';
         const path = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : '')) + fname;
-        if (ws.length) report.push(`${path}\n` + ws.map(w => `  - ${w.path}: ${WARN_JA[w.type] || w.type}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
+        if (ws.length) report.push(`${path}.${extOf(o)}\n` + ws.map(w => `  - ${w.path}: ${WARN_JA[w.type] || w.type}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
         if (ws.length && !o.incWarn) { skipped++; continue; }
-        const blob = await encode(o, r.rgba, r.W, r.H, t.s);
-        if (!blob) { report.push(`${path}\n  - 空の画像のため省略`); continue; }
-        if (dir) await writeTo(dir, path, blob);
-        else if (o.out === 'each') { const res = await saveBlob(path.replace(/\//g, '_'), blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
-        else zip.file(path, blob);
-        written++;
+        const files = await encode(o, r.rgba, r.W, r.H, t.s);
+        if (!files) { report.push(`${path}.${extOf(o)}\n  - 空の画像のため省略`); continue; }
+        for (const f of files) {
+          if (dir) await writeTo(dir, path + f.tail, f.blob);
+          else if (o.out === 'each') { const res = await saveBlob((path + f.tail).replace(/\//g, '_'), f.blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
+          else zip.file(path + f.tail, f.blob);
+          written++;
+        }
       }
     }
     const done: Status = [{ t: `${written} ファイルを書き出し`, c: 'ok' }, ...(skipped ? [{ t: ' · ' }, { t: `${skipped} 件を省略`, c: 'warn' as const }] : [])];
