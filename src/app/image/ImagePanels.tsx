@@ -120,16 +120,10 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
   // small screens: the selected tab folds/unfolds the panel, the other tab switches and unfolds
   const pickPane = (v: 'layer' | 'slice') => {
     if (v !== t.pane) { t.setPane(v); setFold(false); }
-    else if (matchMedia('(max-width: 1100px)').matches) setFold(!fold);
+    else if (matchMedia('(max-width: 640px)').matches) setFold(!fold);
   };
-  // the panel sits below the preview there, so unfolding opens downward; bring the opened list into view
-  const asideRef = useRef<HTMLElement>(null), wasFold = useRef(fold);
-  useEffect(() => {
-    if (wasFold.current && !fold) asideRef.current!.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    wasFold.current = fold;
-  }, [fold]);
   return (
-    <aside ref={asideRef} className="panel layers" aria-label="レイヤー">
+    <aside className="panel layers" aria-label="レイヤー">
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={pickPane} />
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
