@@ -371,7 +371,7 @@ export function Inspector({ t }: { t: ImageTool }) {
         <div className="sec">
           <div className="prop pair nl lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
           <div className="prop pair nl"><span>形式</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
-          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns ? !variantsOf(o).some(v => v?.svc === 'ig') : o.fmt === 'png' || o.fmt === 'ico'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
+          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns || o.fmt === 'png' || o.fmt === 'ico'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec" hidden={ico && !layer}>
           <div className="prop pair" hidden={ico}><span>サイズ</span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', '原寸'], ['w', '指定'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={v => set('size', v)} /></div>
@@ -382,6 +382,7 @@ export function Inspector({ t }: { t: ImageTool }) {
               <Toggles id={'ps-' + svc} values={o.picks} options={IMAGE_PRESETS.filter(x => x.svc === svc).map(x => [x.id, x.label])} onToggle={id => set('picks', toggleId(o.picks, id))} /></div>
           ))}
           {g && <div className="prop ps"><span>合わせ方</span><Seg id="fit" value={o.fits[g]} options={[['contain', '余白'], ['cover', '切り抜き']]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
+          {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span>画質</span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
           {sw('trim', 'trim', <span>余白カット</span>, 'prop pair lp', !layer)}
         </div>
         <div className="sec">
