@@ -61,7 +61,7 @@ const EN: Record<string, string> = {
   '保存を取り消しました': 'Save canceled', '保存できませんでした': 'Couldn’t save', 'この環境ではフォルダに保存できません': 'Can’t save to a folder here',
   '空の画像のため省略': 'Skipped: empty image', '{n} 件を省略': '{n} skipped', '書き出せる画像がありません': 'Nothing to export',
   '警告のため書き出さなかった画像: {n}': 'Images not exported because of warnings: {n}', 'エラー: {e}': 'Error: {e}',
-  '読み込み用ライブラリを取得できません': 'Can’t load the file reader', 'CLIP STUDIOのファイルではありません': 'Not a CLIP STUDIO file', 'レイヤー情報が見つかりません': 'No layer data found',
+  'アプリが更新されました。ページを再読み込みしてください': 'The app was updated. Reload the page', '読み込み用ライブラリを取得できません': 'Can’t load the file reader', 'CLIP STUDIOのファイルではありません': 'Not a CLIP STUDIO file', 'レイヤー情報が見つかりません': 'No layer data found',
   // layer warnings
   'レイヤー効果は描画されません': 'Layer effects are not drawn', '調整レイヤーは適用されません': 'Adjustment layers are not applied', 'ブレンド条件は適用されません': 'Blend If is not applied',
   'ノックアウトは適用されません': 'Knockout is not applied', 'ベクトルマスクは適用されません': 'Vector masks are not applied', 'スマートフィルターは保存済みの画像を使用': 'Smart filters use the saved image',
