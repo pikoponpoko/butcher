@@ -89,7 +89,7 @@ export async function encodeMp4(W: number, H: number, fps: number, n: number, ta
     try { if ((await VideoEncoder.isConfigSupported(c)).supported) { config = c; break; } } catch {}
   }
   if (!config) throw new Error(tr('この解像度のMP4はこのブラウザで書き出せません'));
-  const muxer = new M.Muxer({ target: new M.ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
+  const muxer = new M.Muxer({ target: new M.ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H, frameRate: Number.isInteger(fps) ? fps : undefined }, fastStart: 'in-memory' });
   let err: unknown = null;
   const kept: { data: Uint8Array; type: EncodedVideoChunkType; ts: number; dur: number }[] = [];
   const enc = new VideoEncoder({

@@ -21,11 +21,11 @@ interface Template { id: string; fmt?: Fmt; w?: number; h?: number; ratio?: Rati
 type Use = 'custom' | 'web' | Group;
 const TEMPLATES: Template[] = [
   { id: 'custom' },
-  { id: 'web-gif', fmt: 'gif', w: 800, ratio: 'src', target: 2, fps: 15 },
-  { id: 'web-webp', fmt: 'webp', w: 800, ratio: 'src', target: 1, fps: 20 },
-  { id: 'sns', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 30 },
-  { id: 'sns-gif', fmt: 'gif', ratio: 'free', fit: 'cover', target: 15, fps: 15 },
-  { id: 'wp', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 30 },
+  { id: 'web-gif', fmt: 'gif', w: 800, ratio: 'src', target: 2, fps: 0 },
+  { id: 'web-webp', fmt: 'webp', w: 800, ratio: 'src', target: 1, fps: 0 },
+  { id: 'sns', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 0 },
+  { id: 'sns-gif', fmt: 'gif', ratio: 'free', fit: 'cover', target: 15, fps: 0 },
+  { id: 'wp', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 0 },
 ];
 const X_GIF_FRAMES = 350;
 const KEYS = ['fmt', 'w', 'h', 'ratio', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot', 'reps'] as const;
@@ -33,6 +33,10 @@ const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
 // ドット choices; a value saved before the list keeps its own entry
 const DOTS = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 const dotSizes = (d: number) => d > 1 && !DOTS.includes(d) ? [...DOTS, d].sort((a, b) => a - b) : DOTS;
+// FPS choices; 0 = the video's own rate. A value saved before the list keeps its own entry.
+const FPS = [0, 60, 50, 30, 25, 24, 20, 15, 12, 10, 8, 5];
+const fpsChoices = (f: number) => FPS.includes(f) ? FPS : [...FPS, f].sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a));
+const COMMON_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
 const SPEEDS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2', '3', '4'];
 const fmtMB = (b: number) => (b / 1048576).toFixed(b < 1048576 * 10 ? 2 : 1) + ' MB';
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -41,10 +45,11 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 function initState() {
   const g = {
-    fmt: 'gif' as Fmt, w: 480, h: 270, ratio: 'src' as Ratio, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, reps: 1, tpl: 'custom', picks: PICKS_DEFAULT,
-    signLock: undefined as SignColor | undefined, v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, crop: null as Rect | null, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
+    fmt: 'gif' as Fmt, w: 480, h: 270, ratio: 'src' as Ratio, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 0, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, reps: 1, tpl: 'custom', picks: PICKS_DEFAULT,
+    signLock: undefined as SignColor | undefined, srcFps: 0, v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, crop: null as Rect | null, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
-  try { Object.assign(g, fixRatio(JSON.parse(localStorage.getItem('gif:settings') || '{}'))); } catch {}
+  // settings saved before v2 had a fixed FPS as the default; start those on the video's own rate
+  try { const o = fixRatio(JSON.parse(localStorage.getItem('gif:settings') || '{}')); if (!o.v2) delete o.fps; delete o.v2; Object.assign(g, o); } catch {}
   g.crop = null; // per video
   return g;
 }
@@ -67,13 +72,14 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   const scrubT = useRef<number | null>(null);
 
   const outW = () => s.fmt === 'mp4' ? even(s.w) : s.w, outH = () => s.fmt === 'mp4' ? even(s.h) : s.h;
-  const effFps = () => s.fmt === 'gif' ? Math.min(s.fps, 50) : s.fps; // GIF delays under 20ms are slowed down by browsers
+  const baseFps = () => s.fps || s.srcFps || 30;
+  const effFps = () => s.fmt === 'gif' ? Math.min(baseFps(), 50) : baseFps(); // GIF delays under 20ms are slowed down by browsers
   const frameCount = () => Math.max(1, Math.round((s.end - s.start) / s.speed * effFps()));
   // MP4 ループ: the clip written this many times in a row
   const clipSecs = () => frameCount() / effFps();
   const reps = () => s.fmt === 'mp4' ? Math.max(1, Math.round(s.reps) || 1) : 1;
   const alpha = () => s.fmt !== 'mp4' && s.fit === 'contain' && s.bg === 'transparent';
-  const persist = () => { try { localStorage.setItem('gif:settings', JSON.stringify(Object.fromEntries(KEYS.map(k => [k, s[k]])))); } catch {} };
+  const persist = () => { try { localStorage.setItem('gif:settings', JSON.stringify({ ...Object.fromEntries(KEYS.map(k => [k, s[k]])), v2: true })); } catch {} };
 
   // ---------- crop frame (切り抜き): a rect in source px with the output's aspect ratio, kept inside the video
   const ratio = () => s.ratio === 'free' ? 0 : s.ratio === 'src' ? (s.sh ? s.sw / s.sh : 0) : (([a, b]) => a / b)(s.ratio.split(':').map(Number));
@@ -427,7 +433,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   async function captureFrames(W: number, H: number, onFrame: (i: number, n: number, c: OffscreenCanvas, ctx: OffscreenCanvasRenderingContext2D) => void | Promise<void>) {
     const n = frameCount(), fps = effFps(), c = new OffscreenCanvas(W, H), ctx = c.getContext('2d', { willReadFrequently: true })!;
     for (let i = 0; i < n; i++) {
-      await seek(s.start + i * s.speed / fps);
+      await seek(s.start + (i + 0.5) * s.speed / fps);
       drawFrame(ctx, W, H);
       await onFrame(i, n, c, ctx);
     }
@@ -503,6 +509,26 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   }
 
   // ---------- open
+  // The video's frame rate isn't exposed, so play a moment and read the gap between presented frames.
+  async function measureFps() {
+    if (!('requestVideoFrameCallback' in v)) return 0;
+    const times: number[] = [];
+    await new Promise<void>(res => {
+      const to = setTimeout(res, 3000);
+      const cb = (_: number, m: VideoFrameCallbackMetadata) => { times.push(m.mediaTime); if (times.length >= 31) { clearTimeout(to); res(); } else v.requestVideoFrameCallback(cb); };
+      v.requestVideoFrameCallback(cb);
+      v.play().catch(() => { clearTimeout(to); res(); });
+    });
+    v.pause();
+    const d = times.slice(1).map((t, i) => t - times[i]).filter(x => x > 0.001);
+    if (d.length < 3) return 0;
+    // average over the run when no frame was skipped, otherwise the median gap
+    const med = [...d].sort((a, b) => a - b)[d.length >> 1];
+    const gap = d.every(x => x < med * 1.5) ? d.reduce((a, x) => a + x, 0) / d.length : med;
+    // whole rates win unless the timing clearly points at an NTSC rate (23.976 / 29.97 / 59.94)
+    const f = 1 / gap, near = COMMON_FPS.reduce((a, c) => Math.abs(c - f) * (Number.isInteger(c) ? 1 : 3) < Math.abs(a - f) * (Number.isInteger(a) ? 1 : 3) ? c : a);
+    return Math.abs(near - f) / near < 0.015 ? near : Math.round(f * 100) / 100;
+  }
   async function open(file: File) {
     v.pause(); clearResult();
     if (s.url) URL.revokeObjectURL(s.url);
@@ -510,6 +536,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     try {
       await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error(tr('この動画は読み込めません'))); });
       if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
+      s.srcFps = await measureFps();
       s.v = true; s.dur = v.duration; s.sw = v.videoWidth; s.sh = v.videoHeight; s.start = 0; s.end = Math.min(s.dur, 6); s.crop = null; hist.current = { u: [], r: [] };
       if (s.tpl === 'custom' && locked()) { const r = ratio(); s.w = Math.min(s.w, Math.round(Math.min(s.sw, s.sh * r))); lockFromW(); }
       status('');
@@ -535,7 +562,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   const sum = s.v ? <>
     {`${sets ? tr('{n} ファイル', { n: presetSizes().length }) : `${outW()}×${outH()}`} · ${tr('{n} フレーム', { n })} · ${tr('{s}秒', { s: (clipSecs() * reps()).toFixed(2) })}${reps() > 1 ? ` · ×${reps()}` : ''}`}
     {maxFrames && n > maxFrames ? <> · <span className="warn">{tr('{n} フレームを超えています', { n: maxFrames })}</span></> : null}
-    {s.fmt === 'gif' && s.fps > 50 ? <> · <span className="warn">{tr('GIFは50fpsまで')}</span></> : null}
+    {s.fmt === 'gif' && baseFps() > 50 ? <> · <span className="warn">{tr('GIFは50fpsまで')}</span></> : null}
   </> : null;
   const playIcon = v.paused
     ? <svg width="10" height="12" viewBox="0 0 10 12"><path d="M1 1v10l8-5z" fill="currentColor" /></svg>
@@ -602,7 +629,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
               <DraftInput id="gStart" className="n" type="number" min="0" step="0.01" aria-label={tr('開始')} value={s.start.toFixed(2)} onBlur={() => { fieldBlur(); seek(s.start); }}
                 onDraft={num('start', val => Math.max(0, Math.min(val, s.end - 0.01)))} />–<DraftInput id="gEnd" className="n" type="number" min="0" step="0.01" aria-label={tr('終了')} value={s.end.toFixed(2)} onBlur={() => { fieldBlur(); seek(s.end); }}
                 onDraft={num('end', val => Math.min(s.dur, Math.max(val, s.start + 0.01)))} />{tr('秒')}</span></div>
-            <div className="prop pair"><span>FPS</span><span className="unit"><DraftInput id="gFps" className="n" type="number" min="1" max="60" value={s.fps} onBlur={fieldBlur} onDraft={num('fps', val => Math.max(1, Math.min(60, val)))} /></span></div>
+            <label className="prop pair" htmlFor="gFps"><span>FPS</span><select id="gFps" value={String(s.fps)} onChange={e => { s.fps = +e.target.value; changed(); }}>{fpsChoices(s.fps).map(f => <option key={f} value={f}>{f ? f : s.srcFps ? tr('元（{f}）', { f: +s.srcFps.toFixed(2) }) : tr('元')}</option>)}</select></label>
             <label className="prop pair" htmlFor="gSpeed"><span><Lbl>{tr('速度')}</Lbl></span><select id="gSpeed" value={String(s.speed)} onChange={e => { s.speed = +e.target.value; v.playbackRate = s.speed; changed(); }}>{SPEEDS.map(x => <option key={x}>{x}</option>)}</select></label>
             <div className="prop pair" id="gRepRow" hidden={s.fmt !== 'mp4'}><span><Lbl>{tr('ループ')}</Lbl></span><span className="unit"><DraftInput id="gRep" className="n" type="number" min="1" max="999" step="1" value={reps()} onBlur={fieldBlur} onDraft={num('reps', val => Math.max(1, Math.min(999, Math.round(val) || 1)))} />{tr('回')}</span></div>
             <label className="prop pair" htmlFor="gLoop" id="gLoopRow" hidden={s.fmt === 'mp4'}><span><Lbl>{tr('ループ')}</Lbl></span><select id="gLoop" value={String(s.loop)} onChange={e => { s.loop = +e.target.value; changed(); }}><option value="0">{tr('無限')}</option><option value="1">{tr('1回')}</option><option value="2">{tr('2回')}</option><option value="3">{tr('3回')}</option>{altOptions([['無限'], ['1回'], ['2回'], ['3回']])}</select></label>
