@@ -48,6 +48,8 @@ button, select, input { font: inherit; color: inherit; }
 .ph b { color: var(--fg); font-weight: 600; margin-right: auto; }
 .link { border: 0; background: none; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; box-sizing: border-box; height: 21px; padding: 0 4px; line-height: 1; border-radius: 4px; }
 .link:hover { color: var(--fg); background: var(--field); }
+.fold { display: none; flex: none; width: 44px; height: 31px; margin-right: -8px; border-radius: 0; justify-content: center; padding: 0; }
+.fold svg { width: 14px; height: 14px; transition: transform .12s; transform: rotate(180deg); } .app.folded .fold svg { transform: none; }
 
 .tree { overflow: auto; flex: 1; padding: 4px 0; }
 .row { display: flex; align-items: center; gap: 6px; height: 34px; padding-right: 8px; cursor: pointer; white-space: nowrap; }
@@ -77,7 +79,7 @@ button, select, input { font: inherit; color: inherit; }
 .cv { position: relative; line-height: 0; }
 .sl { position: absolute; inset: 0; touch-action: none; }
 .sl.on, .stage.slicing { cursor: crosshair; }
-.stage.slicing { touch-action: none; }
+#stage { touch-action: pan-y; } #stage.slicing { touch-action: none; }
 .sr { position: absolute; box-sizing: border-box; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); cursor: move; }
 .sr.off { border-style: dashed; background: none; }
 .sr.sel { border-width: 2px; background: color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -180,14 +182,40 @@ button, select, input { font: inherit; color: inherit; }
   .insp .sec { border-right: 1px solid var(--line); }
   .foot { border-top: 1px solid var(--line); }
   .act { justify-content: flex-start; gap: 12px; }
+  .fold { display: inline-flex; }
+  #stage { padding: 0; } #stage.slicing { padding: 10px; }
+  .app.folded #stage { flex: none; aspect-ratio: var(--ar, 4 / 3); max-height: calc(100svh - var(--bar-h, 44px) - 61px); }
+  .insp .sec { display: flex; flex-wrap: wrap; align-content: start; column-gap: 16px; }
+  .insp .sec > * { flex: 1 0 100%; }
+  .insp .sec > .prop.pair { flex: 1 1 auto; grid-template-columns: auto minmax(0, 1fr); }
+  .insp .sec > .prop.pair.sw { flex: 0 0 auto; grid-template-columns: auto auto; }
+  .insp .sec > .prop.pair > .seg { display: flex; width: auto; justify-self: stretch; }
+  .insp .sec > .prop.pair > .seg button { flex: 1 1 auto; }
+  .insp .sec > .prop.pair.nl .seg button { padding: 0 7px; }
+  #sizeRow { order: 1; }
+  #sizeRow, #qualityRow { grid-template-columns: 36px auto 1fr; }
+  .insp .sec > .prop.pair.fill { flex: 1 1 0; min-width: 0; grid-template-columns: auto minmax(0, 1fr); }
+  .prop.pair.fill input.t { width: 100%; min-width: 0; }
+  .app.folded { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px auto auto auto; grid-template-areas: "bar" "center" "layers" "insp"; }
+  .app.folded .layers { border-right: 0; border-bottom: 1px solid var(--line); }
+  .app.folded .layers > :not(.ph) { display: none; }
+  .app.folded .layers > .ph { border-bottom: 0; }
 }
 @media (max-width: 640px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 42vh minmax(0, auto) auto; grid-template-areas: "bar" "center" "layers" "insp"; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, auto) auto; grid-template-areas: "bar" "center" "layers" "insp"; }
   .bar { height: auto; flex-wrap: wrap; padding-block: 8px; row-gap: 8px; }
   .tabs { order: 3; flex-basis: 100%; height: 32px; }
   .layers { border-right: 0; border-bottom: 1px solid var(--line); }
   .tree { max-height: 300px; }
+  .app.folded { grid-template-rows: auto auto auto auto; }
+  #stage { flex: none; aspect-ratio: var(--ar, 4 / 3); max-height: calc(42vh - 29px); }
   .insp { grid-template-columns: minmax(0, 1fr); }
   .insp .sec { border-right: 0; }
+  .insp .sec > .prop.pair.nl > span:first-child { display: none; }
+  .insp .sec > .prop.pair.nl { grid-template-columns: minmax(0, 1fr); }
+  .insp .sec { column-gap: 12px; }
+  .act > .seg { display: flex; flex: 1 1 auto; width: auto; }
+  .act > .seg button { flex: 1 1 auto; }
+  .act > .btn { flex: 1 1 0; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

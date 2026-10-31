@@ -1,5 +1,5 @@
 // App shell: toolbar, image tool (layers / stage / inspector) and the GIF・動画 tool.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useImageTool } from './image/useImageTool';
 import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { SAMPLES } from './image/model';
@@ -13,10 +13,31 @@ export function App() {
   const [tool, setTool] = useState<Tool>('img');
   const [sample, setSample] = useState('02_multiple_folders.psd');
   const [round, setRound] = useState(false);
+  const [fold, setFold] = useState(false);
   const gif = useRef<GifToolApi>(null);
   const live = useRef({ t, setTool }); live.current = { t, setTool };
 
+  const appRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { t.openSample(sample); }, []);
+  useEffect(() => {
+    if (tool !== 'img') return;
+    const key = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) live.current.t.undo();
+      else if ((k === 'z' && e.shiftKey) || k === 'y') live.current.t.redo();
+      else return;
+      e.preventDefault();
+    };
+    addEventListener('keydown', key); return () => removeEventListener('keydown', key);
+  }, [tool]);
+  useLayoutEffect(() => {
+    // folded layers: the stage fills the screen below the (wrapping) toolbar
+    const app = appRef.current!, bar = app.querySelector('.bar')!;
+    const ro = new ResizeObserver(() => app.style.setProperty('--bar-h', bar.getBoundingClientRect().height + 'px'));
+    ro.observe(bar); return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     const over = (e: DragEvent) => e.preventDefault();
     const drop = (e: DragEvent) => {
@@ -32,7 +53,7 @@ export function App() {
   }, []);
 
   return (
-    <div className={'app' + (tool === 'gif' ? ' tool-gif' : '')}>
+    <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '')}>
       <header className="bar">
         <Seg id="tool" value={tool} options={[['img', '画像'], ['gif', 'GIF・動画']]} onChange={setTool} />
         <div className="tabs img-only" id="tabs" role="tablist">
@@ -48,7 +69,7 @@ export function App() {
           <input id="file" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple hidden onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
         </div>
       </header>
-      <LayersPanel t={t} round={round} setRound={setRound} />
+      <LayersPanel t={t} round={round} setRound={setRound} fold={fold} setFold={setFold} />
       <Stage t={t} round={round} />
       <Inspector t={t} />
       <GifTool active={tool === 'gif'} ref={gif} />
