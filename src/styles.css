@@ -196,8 +196,6 @@ button, select, input { font: inherit; color: inherit; }
 .gif .prop select { max-width: 176px; }
 .gif .prop.use { grid-template-columns: minmax(0, 1fr); }
 .gif .prop.use .seg { display: flex; width: auto; justify-self: stretch; } .gif .prop.use .seg button { flex: 1 1 auto; padding: 0 6px; }
-.lock { border: 1px solid var(--line); background: var(--field); border-radius: 5px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; color: var(--muted); cursor: pointer; }
-.lock[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .prop .unit select { height: 24px; }
 @media (max-width: 1100px) {
   .gif { grid-template-columns: minmax(0, 1fr); grid-template-rows: 62vh auto; }
