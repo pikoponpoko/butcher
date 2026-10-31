@@ -5,7 +5,7 @@ import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe,
 import { filesPerTarget, toCanvas, variantsOf } from './exporter';
 import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
-import { DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
+import { AddHint, DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
 import { contrastColor, drawSign, signActive, signLayout, signReady, useSign } from '../sign';
 
 const ICON = {
@@ -143,7 +143,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 type Drag = { id: number; type: 'new' | 'move' | 'resize'; s: Slice; o: { x: number; y: number; w?: number; h?: number }; p: { x: number; y: number }; h?: string; added?: boolean };
 
-export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
+export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPick: () => void }) {
   const stageRef = useRef<HTMLDivElement>(null), pvRef = useRef<HTMLCanvasElement>(null), sgRef = useRef<HTMLCanvasElement>(null);
   const sign = useSign(), [, fontBump] = useState(0);
   const [avail, setAvail] = useState({ w: 0, h: 0 });
@@ -387,7 +387,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const sc = slicing ? curSlice(d) : null;
   return (
     <main className="center">
-      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '')} id="stage" ref={stageRef} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '') + (d ? '' : ' pick')} id="stage" ref={stageRef} onClick={d ? undefined : onPick} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <div className="cv" style={cvStyle}>
           <canvas id="pv" ref={pvRef} width="1" height="1" hidden={!pv} style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">
@@ -408,6 +408,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
         <div className="warnbox" id="pvInfo" hidden={!ws.length}>
           {ws.map((w, i) => <div key={i}>{`${w.path}：${WARN_JA[w.type] || w.type}${w.detail ? `（${w.detail}）` : ''}`}</div>)}
         </div>
+        {!d && !drop && <AddHint />}
         <div className="drop" id="drop" hidden={!drop}>ここにドロップ</div>
       </div>
       <div className="status">

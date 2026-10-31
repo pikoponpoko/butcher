@@ -170,10 +170,12 @@ button, select, input { font: inherit; color: inherit; }
 .bar-r { margin-left: auto; }
 .gif .stage video, .gif .stage img { display: block; background-color: var(--chk-a);
   background-image: conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: 12px 12px; }
-.gempty { color: var(--muted); }
-.gif .stage.pick { cursor: pointer; }
-.gempty .coarse { display: none; }
-@media (pointer: coarse) { .gempty .fine { display: none; } .gempty .coarse { display: inline; } }
+.add { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); pointer-events: none; }
+.add svg { display: block; }
+.stage.pick { cursor: pointer; }
+.stage.pick:hover .add { color: var(--fg); }
+.add .coarse { display: none; }
+@media (pointer: coarse) { .add .fine { display: none; } .add .coarse { display: inline; } }
 .fi { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 #gStage.crop { touch-action: none; cursor: crosshair; }
 #gCrop .sr { background: none; }

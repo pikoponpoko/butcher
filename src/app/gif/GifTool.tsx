@@ -3,7 +3,7 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type Ref } from 'react';
 import { saveBlob, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
-import { DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
+import { AddHint, DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
 import { type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
 import { type Group, type Preset, PICKS_DEFAULT, SERVICES, VIDEO_PRESETS, X_GIF, picked, toggleId } from '../presets';
 import JSZip from 'jszip';
@@ -530,7 +530,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
           </div>
           <img id="gResI" alt="" hidden={show !== 'i' || !s.v} style={box} src={show === 'i' ? s.resUrl : undefined} />
           <video id="gResV" ref={resV} muted loop playsInline hidden={show !== 'v' || !s.v} style={box} src={s.fmt === 'mp4' && s.resUrl ? s.resUrl : undefined} />
-          <span className="gempty" id="gEmpty" hidden={s.v}><span className="fine">動画をドロップ</span><span className="coarse">動画を選択</span></span>
+          <AddHint id="gEmpty" hidden={s.v} />
         </div>
         <div className="tl">
           <button className="play" id="gPlay" aria-label={v.paused ? '再生' : '停止'} onClick={() => setPlaying(v.paused)}>{playIcon}</button>
