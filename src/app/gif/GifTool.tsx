@@ -29,6 +29,9 @@ const TEMPLATES: Template[] = [
 const X_GIF_FRAMES = 350;
 const KEYS = ['fmt', 'w', 'h', 'ratio', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot'] as const;
 const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
+// ドット choices; a value saved before the list keeps its own entry
+const DOTS = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16];
+const dotSizes = (d: number) => d > 1 && !DOTS.includes(d) ? [...DOTS, d].sort((a, b) => a - b) : DOTS;
 const SPEEDS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2', '3', '4'];
 const fmtMB = (b: number) => (b / 1048576).toFixed(b < 1048576 * 10 ? 2 : 1) + ' MB';
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -602,8 +605,8 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
           </div>
           <div className="sec">
                         <div className="prop pair"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
-            <div className="prop pair" id="gDotRow"><span>ドット</span><span className="unit"><DraftInput id="gDot" className="n" type="number" min="1" max="64" placeholder="なし" value={s.dot > 1 ? s.dot : ''} onBlur={fieldBlur}
-              onDraft={text => { const val = +text; if (!isFinite(val)) return; s.dot = Math.max(0, Math.min(64, Math.round(val))); changed(); }} />px
+            <div className="prop pair" id="gDotRow"><span>ドット</span><span className="unit"><select id="gDot" aria-label="ドットの大きさ" value={String(dotOn() ? s.dot : 0)} onChange={e => { s.dot = +e.target.value; changed(); }}>
+              {dotSizes(s.dot).map(d => <option key={d} value={d}>{d ? d + 'px' : 'なし'}</option>)}</select>
               <select id="gColors" aria-label="色数" value={String(s.colors)} hidden={s.fmt !== 'gif' && !dotOn()} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16', '8', '4'].map(x => <option key={x} value={x}>{x}色</option>)}</select></span></div>
             <label className="prop pair" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span>画質</span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
             <div className="prop"><span>設定</span><span className="unit"><button className="link" id="gPLoad" onClick={() => presetRef.current!.click()}>読込</button><button className="link" id="gPSave"
