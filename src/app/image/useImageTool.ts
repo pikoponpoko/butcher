@@ -85,6 +85,10 @@ export function useImageTool() {
     if (!doc) return; const i = doc.slices.findIndex(s => s.id === doc.sliceSel); if (i < 0) return;
     edit(() => { doc.slices.splice(i, 1); doc.sliceSel = (doc.slices[i] || doc.slices[i - 1] || {} as Partial<Slice>).id ?? null; });
   }
+  function clearSlices() {
+    if (!doc || !doc.slices.length) return;
+    edit(() => { doc.slices = []; doc.sliceSel = null; });
+  }
   async function saveSlices() {
     if (!doc) return;
     if (!doc.slices.length) { setStatus([{ t: 'スライスがありません', c: 'err' }]); return; }
@@ -106,7 +110,7 @@ export function useImageTool() {
 
   return {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
-    openFiles, openSample, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, saveSlices, loadSlices,
+    openFiles, openSample, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, saveSlices, loadSlices,
     begin, end, edit, undo: () => step(true), redo: () => step(false),
     accepts: (f: File) => SRC_RE.test(f.name),
   };
