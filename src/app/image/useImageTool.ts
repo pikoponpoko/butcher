@@ -5,10 +5,11 @@ import { type Doc, type Node, type Slice, type Snap, SRC_RE, restore, sameSnap, 
 import { type Rect, detectPanels } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
+import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 
 export type Pane = 'layer' | 'slice';
 const INIT: Settings = {
-  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', px: '1080', basis: 'canvas', trim: true,
+  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true,
   prefix: '', suffix: '', hidden: false, tree: true, slFill: true, allFiles: false, incWarn: false, out: 'zip',
 };
 
