@@ -71,7 +71,7 @@ const EN: Record<string, string> = {
   '合成モードは未検証（通常として処理）': 'Blend mode unverified (treated as Normal)', 'CLIP STUDIOのマスクは未検証': 'CLIP STUDIO masks unverified', 'レイヤーの位置情報は未検証': 'Layer position unverified',
   'この種類のレイヤーは未検証': 'Layer type unverified', 'タイル配置を読み取れません': 'Can’t read the tile layout', 'この色形式は未対応': 'Unsupported color format',
   // GIF / video
-  'GIF書き出し設定': 'GIF export settings', '元': 'Orig', '自由': 'Free', '結果': 'Result', 'カスタム': 'Custom', '再生': 'Play', '停止': 'Pause', '透明': 'Clear', '背景': 'Background',
+  'GIF書き出し設定': 'GIF export settings', '元': 'Orig', '元（{f}）': 'Orig ({f})', '自由': 'Free', '結果': 'Result', 'カスタム': 'Custom', '再生': 'Play', '停止': 'Pause', '透明': 'Clear', '背景': 'Background',
   '範囲': 'Range', '開始': 'Start', '終了': 'End', '秒': 's', '速度': 'Speed', 'ループ': 'Loop', '無限': 'Forever', '1回': 'Once', '2回': '2 times', '3回': '3 times', '回': 'times',
   '目標サイズ': 'Target size', 'なし': 'None', 'ドット': 'Pixel', 'ドットの大きさ': 'Pixel size', '色数': 'Colors', '{n}色': '{n} colors', '設定': 'Preset',
   '設定を読込': 'Preset loaded', '設定を読み込めません': 'Can’t load preset', 'このまま保存': 'Save anyway',
