@@ -1,7 +1,7 @@
 // GIF / animated WebP / MP4 export from a video. The video element and the settings live in refs because
 // playback, seeking and encoding drive them outside React; `bump()` re-renders.
 import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type Ref } from 'react';
-import { saveBlob, saveFailText } from '../save';
+import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import type { Status } from '../image/exporter';
 import { AddHint, DraftInput, Lbl, altOptions, Pick, Seg, SignRows, StatusText, Toggles } from '../ui';
 import { type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
@@ -423,7 +423,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   const outName = () => s.name.replace(/\.[^.]+$/, '') + '.' + s.fmt;
   async function saveResult() {
     if (!s.result) return;
-    const r = await saveBlob(outName(), s.result);
+    const r = await saveFiles([{ name: outName(), data: s.result }]);
     if (r === 'ok') status(tr('{s} を書き出し', { s: fmtMB(s.result.size) }), 'ok'); else status(saveFailText(r));
   }
   const showRes = s.view === 'res' && !!s.result;
@@ -488,13 +488,14 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
       const u = use();
       if (u === 'sns' || u === 'wp') {
         const sizes = presetSizes(); if (!sizes.length) throw new Error(tr('サイズを選んでください'));
-        const zip = new JSZip(), base = s.name.replace(/\.[^.]+$/, ''); let over = 0;
+        const zip = new JSZip(), base = s.name.replace(/\.[^.]+$/, ''), each: { name: string; data: Blob }[] = []; let over = 0;
         for (let j = 0; j < sizes.length; j++) {
           const z = sizes[j], { best, ok } = await encodeAt(z.w, z.h, t => status(`${j + 1}/${sizes.length} ${t}`));
           if (!ok) over++;
-          zip.file(`${base}_${z.id}.${s.fmt}`, best);
+          zip.file(`${base}_${z.id}.${s.fmt}`, best); each.push({ name: `${base}_${z.id}.${s.fmt}`, data: best });
         }
-        const r = await saveBlob(`${base}_${u}.zip`, await zip.generateAsync({ type: 'blob' }));
+        // phones get the files one by one (share sheet / gallery), elsewhere one zip
+        const r = shareMode() ? await saveFiles(each) : await saveBlob(`${base}_${u}.zip`, await zip.generateAsync({ type: 'blob' }));
         if (r !== 'ok') status(saveFailText(r));
         else if (over) setStatusState([{ t: tr('{n} ファイルを書き出し', { n: sizes.length }), c: 'ok' }, { t: ' · ' }, { t: tr('{n} 件は目標 {t} MB を超えています', { n: over, t: s.target }), c: 'warn' }]);
         else status(tr('{n} ファイルを書き出し', { n: sizes.length }), 'ok');

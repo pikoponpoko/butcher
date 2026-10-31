@@ -5,6 +5,7 @@ import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { GifTool, isVideo, type GifToolApi } from './gif/GifTool';
 import { Lbl, Seg } from './ui';
 import { setLang, tr, useLang } from './i18n';
+import { IMG_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
 
 type Tool = 'img' | 'gif';
 
@@ -37,14 +38,17 @@ export function App() {
     const ro = new ResizeObserver(() => app.style.setProperty('--bar-h', bar.getBoundingClientRect().height + 'px'));
     ro.observe(bar); return () => ro.disconnect();
   }, []);
+  const openAny = (files: File[]) => {
+    const vid = files.find(isVideo);
+    if (vid) { live.current.setTool('gif'); gif.current?.open(vid); return; }
+    const fs = files.filter(live.current.t.accepts); if (fs.length) { live.current.setTool('img'); live.current.t.openFiles(fs); }
+  };
+  useEffect(() => { takeShared().then(fs => { if (fs.length) openAny(fs); }, () => {}); }, []);
   useEffect(() => {
     const over = (e: DragEvent) => e.preventDefault();
     const drop = (e: DragEvent) => {
       e.preventDefault();
-      const files = [...(e.dataTransfer?.files || [])];
-      const vid = files.find(isVideo);
-      if (vid) { live.current.setTool('gif'); gif.current?.open(vid); return; }
-      const fs = files.filter(live.current.t.accepts); if (fs.length) live.current.t.openFiles(fs);
+      openAny([...(e.dataTransfer?.files || [])]);
     };
     const enter = (e: DragEvent) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); };
     addEventListener('dragenter', enter); addEventListener('dragover', over); addEventListener('drop', drop);
@@ -52,7 +56,8 @@ export function App() {
   }, []);
 
   const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null);
-  const pickVideo = () => gFileRef.current!.click();
+  const pickVideo = () => pickFiles('butcher-video', VIDEO_ACCEPT, false, gFileRef.current, fs => { if (fs[0]) gif.current?.open(fs[0]); });
+  const pickImages = () => pickFiles('butcher-image', IMG_ACCEPT, true, fileRef.current, fs => t.openFiles(fs));
   const [gifSt, setGifSt] = useState({ open: false, ready: false });
 
   return (
@@ -71,7 +76,7 @@ export function App() {
         </div>
         <div className="bar-r">
           <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></button>
-          <button className="btn img-only" id="add" hidden={!t.docs.length} onClick={() => fileRef.current!.click()}><Lbl>{tr('追加')}</Lbl></button>
+          <button className="btn img-only" id="add" hidden={!t.docs.length} onClick={pickImages}><Lbl>{tr('追加')}</Lbl></button>
           <button className="btn gif-only" id="gAdd" hidden={!gifSt.open} onClick={pickVideo}><Lbl>{tr('追加')}</Lbl></button>
           <button className="btn primary img-only" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}><Lbl>{tr('書き出し')}</Lbl></button>
           <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready} onClick={() => gif.current?.export()}><Lbl>{tr('書き出し')}</Lbl></button>
@@ -81,7 +86,7 @@ export function App() {
         </div>
       </header>
       <LayersPanel t={t} round={round} setRound={setRound} fold={fold} setFold={setFold} />
-      <Stage t={t} round={round} onPick={() => fileRef.current!.click()} />
+      <Stage t={t} round={round} onPick={pickImages} />
       <Inspector t={t} />
       <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} onState={setGifSt} />
     </div>
