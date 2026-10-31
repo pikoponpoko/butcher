@@ -1,7 +1,7 @@
 // Image export: encode composites (trim / slice crop / resize) and write them to a ZIP, single files or a folder.
 import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
-import { saveBlob, saveFailText } from '../save';
+import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import { tr } from '../i18n';
 import { drawSign, signReady } from '../sign';
 import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
@@ -143,7 +143,7 @@ export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice 
   if (o.fmt === 'ico') {
     const zip = new JSZip(); for (const f of files) zip.file(name + f.tail, f.blob);
     const res = await saveBlob(name + '.zip', await zip.generateAsync({ type: 'blob' })); if (res !== 'ok') return [{ t: saveFailText(res) }];
-  } else for (const f of files) { const res = await saveBlob(name + f.tail, f.blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
+  } else { const res = await saveFiles(files.map(f => ({ name: name + f.tail, data: f.blob }))); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
   return [{ t: tr('{n} ファイルを書き出し', { n: files.length }), c: 'ok' }];
 }
 
@@ -158,6 +158,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
     catch (e: any) { if (e.name === 'AbortError') return [{ t: tr('保存を取り消しました') }]; noDir(); return [{ t: tr('この環境ではフォルダに保存できません'), c: 'err' }]; }
   }
   let written = 0, skipped = 0;
+  const share = o.out === 'each' && shareMode(), shared: { name: string; data: Blob }[] = [];
   await signReady();
   try {
     for (const d of docs) {
@@ -185,6 +186,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
         for (const f of files) {
           const path = name0 + f.tail;
           if (dir) await writeTo(dir, path, f.blob);
+          else if (share) shared.push({ name: path.replace(/\//g, '_'), data: f.blob });
           else if (o.out === 'each') { const res = await saveBlob(path.replace(/\//g, '_'), f.blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
           else zip.file(path, f.blob);
           written++;
@@ -194,6 +196,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
     const done: Status = [{ t: tr('{n} ファイルを書き出し', { n: written }), c: 'ok' }, ...(skipped ? [{ t: ' · ' }, { t: tr('{n} 件を省略', { n: skipped }), c: 'warn' as const }] : [])];
     const none: Status = [{ t: tr('書き出せる画像がありません'), c: 'err' }];
     if (dir && report.length) await writeTo(dir, 'warnings.txt', new Blob([report.join('\n\n') + '\n']));
+    if (share && shared.length) { const res = await saveFiles(shared); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
     if (o.out !== 'zip') return written ? done : none;
     if (report.length) zip.file('warnings.txt', (skipped ? tr('警告のため書き出さなかった画像: {n}', { n: skipped }) + '\n\n' : '') + report.join('\n\n') + '\n');
     if (!written) return none;

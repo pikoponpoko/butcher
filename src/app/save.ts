@@ -15,3 +15,21 @@ export async function saveBlob(name: string, data: Blob): Promise<SaveResult> {
   }
 }
 export const saveFailText = (r: SaveResult) => tr(r === 'declined' ? '保存を取り消しました' : '保存できませんでした');
+
+// Phones: hand the files to the share sheet (Google フォト, X, Instagram …) instead of downloading.
+// The share sheet needs a recent tap; when it has expired (a long encode) or sharing isn't possible, the files are downloaded.
+const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', mp4: 'video/mp4', webm: 'video/webm' };
+const asFile = (name: string, data: Blob) => new File([data], name, { type: data.type || MIME[name.split('.').pop()!.toLowerCase()] || '' });
+export const shareMode = () => matchMedia('(pointer: coarse)').matches && typeof navigator.canShare === 'function';
+export async function saveFiles(list: { name: string; data: Blob }[]): Promise<SaveResult> {
+  if (shareMode() && list.length) {
+    const files = list.map(f => asFile(f.name, f.data));
+    const active = (navigator as any).userActivation?.isActive ?? true;
+    if (active && navigator.canShare({ files })) {
+      try { await navigator.share({ files }); return 'ok'; }
+      catch (e: any) { if (e?.name === 'AbortError') return 'declined'; }
+    }
+  }
+  for (const f of list) { const r = await saveBlob(f.name, f.data); if (r !== 'ok') return r; }
+  return 'ok';
+}
