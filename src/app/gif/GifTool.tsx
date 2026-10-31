@@ -525,7 +525,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   const show = showRes ? (s.fmt === 'mp4' ? 'v' : 'i') : 'pv';
   const p = (t: number) => (t / s.dur * 100) + '%';
   const n = frameCount(), u = use(), sets = u === 'sns' || u === 'wp', maxFrames = u === 'sns' && s.fmt === 'gif' ? X_GIF_FRAMES : 0;
-  const fitHidden = locked() && s.v, bgHidden = s.fit !== 'contain' || (locked() && s.v);
+  const fitHidden = locked(), bgHidden = s.fit !== 'contain' || locked();
   const sum = s.v ? <>
     {`${sets ? `${presetSizes().length} ファイル` : `${outW()}×${outH()}`} · ${n} フレーム · ${((s.end - s.start) / s.speed).toFixed(2)}秒`}
     {maxFrames && n > maxFrames ? <> · <span className="warn">{`${maxFrames} フレームを超えています`}</span></> : null}
