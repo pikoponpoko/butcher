@@ -565,8 +565,8 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     {s.fmt === 'gif' && baseFps() > 50 ? <> · <span className="warn">{tr('GIFは50fpsまで')}</span></> : null}
   </> : null;
   const playIcon = v.paused
-    ? <svg width="10" height="12" viewBox="0 0 10 12"><path d="M1 1v10l8-5z" fill="currentColor" /></svg>
-    : <svg width="10" height="12" viewBox="0 0 10 12"><path d="M1 1h3v10H1zM6 1h3v10H6z" fill="currentColor" /></svg>;
+    ? <svg width="16" height="18" viewBox="0 0 16 18"><path d="M3 1v16l13-8z" fill="currentColor" /></svg>
+    : <svg width="16" height="18" viewBox="0 0 16 18"><path d="M2 1h4.5v16H2zM9.5 1H14v16H9.5z" fill="currentColor" /></svg>;
   const fieldBlur = () => bump();
 
   return (
@@ -594,7 +594,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
             <div className="rng" id="gRng" style={s.dur ? { left: p(s.start), width: p(s.end - s.start) } : undefined} />
             <div className="ph2" id="gHead" style={s.dur ? { left: p(scrubT.current ?? v.currentTime) } : undefined} />
           </div>
-          <span className="num" id="gTime">{s.dur ? `${s.start.toFixed(2)}–${s.end.toFixed(2)} / ${s.dur.toFixed(2)}s` : ''}</span>
+          <span className="num" id="gTime">{s.dur ? `${s.dur.toFixed(2)}s` : ''}</span>
         </div>
         <div className="status">
           <span id="gName">{s.v ? `${s.name}  ${s.sw}×${s.sh}` : ''}</span>
