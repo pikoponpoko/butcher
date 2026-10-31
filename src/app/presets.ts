@@ -16,12 +16,12 @@ const WALLPAPER: Preset[] = [
 // Feed images: X keeps PNG, Instagram re-encodes everything as JPEG.
 export const IMAGE_PRESETS: Preset[] = [
   sns('x', '16:9', 1600, 900), sns('x', '1:1', 1080, 1080), sns('x', '3:4', 1080, 1440),
-  sns('ig', '1:1', 1080, 1080), sns('ig', '4:5', 1080, 1350), sns('ig', '3:4', 1080, 1440), sns('ig', '9:16', 1080, 1920),
+  sns('ig', '1.91:1', 1080, 566), sns('ig', '1:1', 1080, 1080), sns('ig', '4:5', 1080, 1350), sns('ig', '3:4', 1080, 1440), sns('ig', '9:16', 1080, 1920),
   ...WALLPAPER,
 ];
 export const VIDEO_PRESETS: Preset[] = [
   sns('x', '16:9', 1920, 1080), sns('x', '1:1', 1080, 1080), sns('x', '9:16', 1080, 1920),
-  sns('ig', '1:1', 1080, 1080), sns('ig', '4:5', 1080, 1350), sns('ig', '3:4', 1080, 1440), sns('ig', '9:16', 1080, 1920),
+  sns('ig', '16:9', 1080, 608), sns('ig', '1:1', 1080, 1080), sns('ig', '4:5', 1080, 1350), sns('ig', '3:4', 1080, 1440), sns('ig', '9:16', 1080, 1920),
   ...WALLPAPER,
 ];
 // X accepts GIF; these sizes keep a 15 MB GIF practical.

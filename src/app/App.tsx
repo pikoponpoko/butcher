@@ -53,6 +53,8 @@ export function App() {
 
   const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null);
   const pickVideo = () => gFileRef.current!.click();
+  const [gifSt, setGifSt] = useState({ open: false, ready: false });
+  const plus = <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 1v10M1 6h10" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>;
 
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '')}>
@@ -70,8 +72,10 @@ export function App() {
         </div>
         <div className="bar-r">
           <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></button>
-          <button className="btn img-only" onClick={() => fileRef.current!.click()}><Lbl>{tr('開く')}</Lbl></button>
-          <button className="btn gif-only" onClick={pickVideo}><Lbl>{tr('開く')}</Lbl></button>
+          <button className="link ic img-only" id="add" hidden={!t.docs.length} aria-label={tr('開く')} title={tr('開く')} onClick={() => fileRef.current!.click()}>{plus}</button>
+          <button className="link ic gif-only" id="gAdd" hidden={!gifSt.open} aria-label={tr('開く')} title={tr('開く')} onClick={pickVideo}>{plus}</button>
+          <button className="btn primary img-only" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}><Lbl>{tr('書き出し')}</Lbl></button>
+          <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready} onClick={() => gif.current?.export()}><Lbl>{tr('書き出し')}</Lbl></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
@@ -80,7 +84,7 @@ export function App() {
       <LayersPanel t={t} round={round} setRound={setRound} fold={fold} setFold={setFold} />
       <Stage t={t} round={round} onPick={() => fileRef.current!.click()} />
       <Inspector t={t} />
-      <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} />
+      <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} onState={setGifSt} />
     </div>
   );
 }

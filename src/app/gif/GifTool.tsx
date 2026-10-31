@@ -28,7 +28,7 @@ const TEMPLATES: Template[] = [
   { id: 'wp', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 30 },
 ];
 const X_GIF_FRAMES = 350;
-const KEYS = ['fmt', 'w', 'h', 'ratio', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot'] as const;
+const KEYS = ['fmt', 'w', 'h', 'ratio', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot', 'rep'] as const;
 const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
 // ドット choices; a value saved before the list keeps its own entry
 const DOTS = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16];
@@ -41,7 +41,7 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 function initState() {
   const g = {
-    fmt: 'gif' as Fmt, w: 480, h: 270, ratio: 'src' as Ratio, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, tpl: 'custom', picks: PICKS_DEFAULT,
+    fmt: 'gif' as Fmt, w: 480, h: 270, ratio: 'src' as Ratio, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, rep: 0, tpl: 'custom', picks: PICKS_DEFAULT,
     signLock: undefined as SignColor | undefined, v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, crop: null as Rect | null, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
   try { Object.assign(g, fixRatio(JSON.parse(localStorage.getItem('gif:settings') || '{}'))); } catch {}
@@ -50,10 +50,10 @@ function initState() {
 }
 type G = ReturnType<typeof initState>;
 
-export interface GifToolApi { open(f: File): void }
+export interface GifToolApi { open(f: File): void; export(): void }
 export const isVideo = (f: File) => /^video\//.test(f.type) || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
 
-export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<GifToolApi>; onPick: () => void }) {
+export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref: Ref<GifToolApi>; onPick: () => void; onState: (st: { open: boolean; ready: boolean }) => void }) {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const g = useRef<G>(null as unknown as G); if (!g.current) g.current = initState();
   const s = g.current;
@@ -69,6 +69,9 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   const outW = () => s.fmt === 'mp4' ? even(s.w) : s.w, outH = () => s.fmt === 'mp4' ? even(s.h) : s.h;
   const effFps = () => s.fmt === 'gif' ? Math.min(s.fps, 50) : s.fps; // GIF delays under 20ms are slowed down by browsers
   const frameCount = () => Math.max(1, Math.round((s.end - s.start) / s.speed * effFps()));
+  // MP4 ループ: the clip repeated a whole number of times, as close to the wanted seconds as that allows
+  const clipSecs = () => frameCount() / effFps();
+  const reps = () => s.fmt === 'mp4' && s.rep > 0 ? Math.max(1, Math.round(s.rep / clipSecs())) : 1;
   const alpha = () => s.fmt !== 'mp4' && s.fit === 'contain' && s.bg === 'transparent';
   const persist = () => { try { localStorage.setItem('gif:settings', JSON.stringify(Object.fromEntries(KEYS.map(k => [k, s[k]])))); } catch {} };
 
@@ -394,8 +397,8 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
     if (u === 'sns') return applyTemplate(f === 'gif' ? 'sns-gif' : 'sns');
     s.fmt = f; if (f === 'mp4' && s.bg === 'transparent') s.bg = '#000000'; changed();
   }
-  const num = (k: 'w' | 'h' | 'fps' | 'target' | 'q' | 'start' | 'end', f: (v: number) => number) => (text: string) => {
-    const val = +text; if (text === '' && k !== 'target') return; if (!isFinite(val)) return; s[k] = f(val); changed();
+  const num = (k: 'w' | 'h' | 'fps' | 'target' | 'q' | 'start' | 'end' | 'rep', f: (v: number) => number) => (text: string) => {
+    const val = +text; if (text === '' && k !== 'target' && k !== 'rep') return; if (!isFinite(val)) return; s[k] = f(val); changed();
   };
 
   // ---------- result / compare
@@ -451,7 +454,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   async function encodeAt(W: number, H: number, say: (t: string) => void) {
     s.signLock = await lockSignColor(W, H);
     const target = s.target ? s.target * 1048576 : 0;
-    if (s.fmt === 'mp4') { const b = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), say); return { best: b, ok: !target || b.size <= target }; }
+    if (s.fmt === 'mp4') { const b = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), say, reps()); return { best: b, ok: !target || b.size <= target }; }
     if (s.fmt === 'webp' && !webpOK) throw new Error(tr('このブラウザはWebP書き出しに対応していません'));
     const eo: EncodeOpts = { fps: effFps(), loop: s.loop, useAlpha: alpha() };
     const frames = await grabRGBA(W, H);
@@ -515,7 +518,9 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
       makeThumbs();
     } catch (e: any) { status(String(e.message || e), 'err'); }
   }
-  useImperativeHandle(ref, () => ({ open }));
+  useImperativeHandle(ref, () => ({ open, export: doExport }));
+  const ready = s.v && !s.busy, stSeen = useRef('');
+  useEffect(() => { const k = `${s.v}${ready}`; if (k !== stSeen.current) { stSeen.current = k; onState({ open: s.v, ready }); } });
 
   // ---------- render
   const W = outW(), H = outH(), k = Math.min(avail.w / W, avail.h / H, 4);
@@ -528,7 +533,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   const n = frameCount(), u = use(), sets = u === 'sns' || u === 'wp', maxFrames = u === 'sns' && s.fmt === 'gif' ? X_GIF_FRAMES : 0;
   const fitHidden = locked(), bgHidden = s.fit !== 'contain' || locked();
   const sum = s.v ? <>
-    {`${sets ? tr('{n} ファイル', { n: presetSizes().length }) : `${outW()}×${outH()}`} · ${tr('{n} フレーム', { n })} · ${tr('{s}秒', { s: ((s.end - s.start) / s.speed).toFixed(2) })}`}
+    {`${sets ? tr('{n} ファイル', { n: presetSizes().length }) : `${outW()}×${outH()}`} · ${tr('{n} フレーム', { n })} · ${tr('{s}秒', { s: (clipSecs() * reps()).toFixed(2) })}${reps() > 1 ? ` · ×${reps()}` : ''}`}
     {maxFrames && n > maxFrames ? <> · <span className="warn">{tr('{n} フレームを超えています', { n: maxFrames })}</span></> : null}
     {s.fmt === 'gif' && s.fps > 50 ? <> · <span className="warn">{tr('GIFは50fpsまで')}</span></> : null}
   </> : null;
@@ -599,6 +604,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
                 onDraft={num('end', val => Math.min(s.dur, Math.max(val, s.start + 0.01)))} />{tr('秒')}</span></div>
             <div className="prop pair"><span>FPS</span><span className="unit"><DraftInput id="gFps" className="n" type="number" min="1" max="60" value={s.fps} onBlur={fieldBlur} onDraft={num('fps', val => Math.max(1, Math.min(60, val)))} /></span></div>
             <label className="prop pair" htmlFor="gSpeed"><span><Lbl>{tr('速度')}</Lbl></span><select id="gSpeed" value={String(s.speed)} onChange={e => { s.speed = +e.target.value; v.playbackRate = s.speed; changed(); }}>{SPEEDS.map(x => <option key={x}>{x}</option>)}</select></label>
+            <div className="prop pair" id="gRepRow" hidden={s.fmt !== 'mp4'}><span><Lbl>{tr('ループ')}</Lbl></span><span className="unit"><DraftInput id="gRep" className="n" type="number" min="0" step="0.1" placeholder={tr('なし')} value={s.rep ? (clipSecs() * reps()).toFixed(2) : ''} onBlur={fieldBlur} onDraft={num('rep', val => Math.max(0, Math.min(3600, val)))} />{tr('秒')}</span></div>
             <label className="prop pair" htmlFor="gLoop" id="gLoopRow" hidden={s.fmt === 'mp4'}><span><Lbl>{tr('ループ')}</Lbl></span><select id="gLoop" value={String(s.loop)} onChange={e => { s.loop = +e.target.value; changed(); }}><option value="0">{tr('無限')}</option><option value="1">{tr('1回')}</option><option value="2">{tr('2回')}</option><option value="3">{tr('3回')}</option>{altOptions([['無限'], ['1回'], ['2回'], ['3回']])}</select></label>
           </div>
           <div className="sec">
@@ -620,7 +626,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
         </div>
         <div className="foot">
           <div className="sumrow"><span id="gSum" className="num">{sum}</span><span id="gStatus" className="muted"><StatusText s={statusLine} /></span></div>
-          <div className="act"><button className="link" id="gKeep" hidden={!keep} onClick={() => { setKeep(false); saveResult(); }}><Lbl>{tr('このまま保存')}</Lbl></button><button className="btn primary" id="gExport" style={{ marginLeft: 'auto' }} disabled={!s.v || s.busy} onClick={doExport}><Lbl>{tr('書き出し')}</Lbl></button></div>
+          <div className="act" hidden={!keep}><button className="link" id="gKeep" onClick={() => { setKeep(false); saveResult(); }}><Lbl>{tr('このまま保存')}</Lbl></button></div>
         </div>
       </aside>
     </section>
