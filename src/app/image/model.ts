@@ -12,15 +12,6 @@ export interface Doc { name: string; psd: PsdDoc & { children?: Node[] }; checke
 export type Mode = 'layer' | 'folder' | 'both' | 'slice';
 export type ExportTarget = { kind: 'slice'; s: Slice; path: string[]; n?: undefined } | { kind: 'folder' | 'layer'; n: Node; path: string[]; s?: undefined };
 
-// Test PSDs (samples/), each inlined into its own chunk loaded on first selection.
-const SAMPLE_FILES = import.meta.glob<string>('../../../samples/*.psd', { query: '?inline', import: 'default' });
-export const SAMPLES = Object.keys(SAMPLE_FILES).map(k => k.split('/').pop()!);
-export async function sampleBuf(k: string) {
-  const b = atob((await SAMPLE_FILES[`../../../samples/${k}`]()).split(',')[1]), u = new Uint8Array(b.length);
-  for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
-  return u.buffer;
-}
-
 export const WARN_JA: Record<string, string> = {
   effects: 'レイヤー効果は描画されません', adjustment: '調整レイヤーは適用されません', blendIf: 'ブレンド条件は適用されません',
   knockout: 'ノックアウトは適用されません', vectorMask: 'ベクトルマスクは適用されません', smartFilter: 'スマートフィルターは保存済みの画像を使用',

@@ -323,7 +323,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
     <main className="center">
       <div className={'stage' + (slicing ? ' slicing' : '')} id="stage" ref={stageRef} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <div className="cv" style={cvStyle}>
-          <canvas id="pv" ref={pvRef} width="1" height="1" style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
+          <canvas id="pv" ref={pvRef} width="1" height="1" hidden={!pv} style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">
             {slicing && d && d.slices.map(s => (
               <div key={s.id} className={'sr' + (s.id === d.sliceSel ? ' sel' : '') + (s.on ? '' : ' off')} data-id={s.id}
@@ -348,7 +348,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
         <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : '空') + `  ${pv.ms}ms` : ''}</span>
         <span id="pvState">{pv && (ws.length ? <span className="warn">{`警告 ${ws.length}`}</span> : <span className="ok">警告なし</span>)}</span>
-        <button className="link" id="saveOne" onClick={t.saveOne}>保存</button>
+        <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}>保存</button>
       </div>
     </main>
   );
@@ -399,7 +399,7 @@ export function Inspector({ t }: { t: ImageTool }) {
         {sw('incWarn', 'incWarn', '警告のある画像も書き出す', undefined, !t.summary.w)}
         <div className="act">
           <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', '個別'], ['dir', 'フォルダ']]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
-          <button className="btn primary" id="export" disabled={t.busy} onClick={t.doExport}>書き出し</button>
+          <button className="btn primary" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}>書き出し</button>
         </div>
       </div>
     </aside>

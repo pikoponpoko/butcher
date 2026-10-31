@@ -1,7 +1,7 @@
 // Image tool state. Documents are large mutable objects (parsed PSD trees), so they stay mutable and
 // `bump()` re-renders after an in-place change.
 import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
-import { type Doc, type Node, type Slice, type Snap, SRC_RE, hiddenKey, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sampleBuf, sliceData, stem, summarize } from './model';
+import { type Doc, type Node, type Slice, type Snap, SRC_RE, hiddenKey, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sliceData, stem, summarize } from './model';
 import { type Rect, detectPanels } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
@@ -65,12 +65,6 @@ export function useImageTool() {
     if (last) { setCur(docs.length - 1); setSel(null); if (last.isImage && pane !== 'slice') setPane('slice'); }
     bump();
   }
-  async function openSample(k: string) {
-    const i = docs.findIndex(d => d.name === k);
-    if (i >= 0) setCur(i);
-    else { docs.push(await openFile(k, await sampleBuf(k))); setCur(docs.length - 1); }
-    setSel(null); bump();
-  }
   function selectDoc(i: number) { setCur(i); setSel(null); }
 
   async function doExport() {
@@ -127,7 +121,7 @@ export function useImageTool() {
 
   return {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
-    openFiles, openSample, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
+    openFiles, selectDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
     begin, end, edit, undo: () => step(true), redo: () => step(false),
     accepts: (f: File) => SRC_RE.test(f.name),
   };

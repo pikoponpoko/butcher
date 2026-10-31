@@ -2,7 +2,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useImageTool } from './image/useImageTool';
 import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
-import { SAMPLES } from './image/model';
 import { GifTool, isVideo, type GifToolApi } from './gif/GifTool';
 import { Seg } from './ui';
 
@@ -11,7 +10,6 @@ type Tool = 'img' | 'gif';
 export function App() {
   const t = useImageTool();
   const [tool, setTool] = useState<Tool>('img');
-  const [sample, setSample] = useState('02_multiple_folders.psd');
   const [round, setRound] = useState(false);
   const [fold, setFold] = useState(false);
   const gif = useRef<GifToolApi>(null);
@@ -19,7 +17,6 @@ export function App() {
 
   const appRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { t.openSample(sample); }, []);
   useEffect(() => {
     if (tool !== 'img') return;
     const key = (e: KeyboardEvent) => {
@@ -63,9 +60,6 @@ export function App() {
           {t.docs.map((d, i) => <button key={i} className="tab" role="tab" title={d.name} aria-selected={i === t.cur} onClick={() => t.selectDoc(i)}>{d.name}</button>)}
         </div>
         <div className="bar-r">
-          <select id="sample" className="img-only" aria-label="サンプル" value={sample} onChange={e => { setSample(e.target.value); t.openSample(e.target.value); }}>
-            {SAMPLES.map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
           <button className="btn img-only" onClick={() => fileRef.current!.click()}>開く</button>
           <button className="btn gif-only" onClick={pickVideo}>開く</button>
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
