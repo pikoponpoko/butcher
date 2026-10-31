@@ -87,6 +87,11 @@ button, select, input { font: inherit; color: inherit; }
 .sl.round .sr::before { content: ""; position: absolute; inset: 0; background: var(--bg); opacity: .85; pointer-events: none;
   -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - .5px), #000 100%); mask: radial-gradient(circle closest-side, transparent calc(100% - .5px), #000 100%); }
 .stage canvas.sg { position: absolute; background: none; pointer-events: none; }
+/* selected slice center */
+.ct { position: absolute; left: 50%; top: 50%; width: 11px; height: 11px; margin: -5px 0 0 -5px; pointer-events: none; }
+.ct::before, .ct::after { content: ""; position: absolute; background: var(--accent); }
+.ct::before { left: 5px; top: 0; width: 1px; height: 11px; }
+.ct::after { left: 0; top: 5px; width: 11px; height: 1px; }
 .hd { position: absolute; width: 9px; height: 9px; box-sizing: border-box; background: var(--panel); border: 1.5px solid var(--accent); margin: -5px 0 0 -5px; }
 .slist { overflow: auto; flex: 1; padding: 4px 0; }
 .slist .row { padding-left: 12px; height: 30px; }

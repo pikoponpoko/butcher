@@ -88,7 +88,7 @@ export function useImageTool() {
   async function saveSlices() {
     if (!doc) return;
     if (!doc.slices.length) { setStatus([{ t: 'スライスがありません', c: 'err' }]); return; }
-    const data = { type: 'slices', version: 1, width: doc.psd.width, height: doc.psd.height, slices: sliceData(doc) };
+    const data = { type: 'slices', version: 2, width: doc.psd.width, height: doc.psd.height, slices: sliceData(doc).map(({ name, x, y, w, h, on }) => ({ name, cx: x + w / 2, cy: y + h / 2, w, h, on })) };
     if (await saveBlob(safe(stem(doc.name)) + '_slices.json', new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })) === 'ok') setStatus([{ t: 'スライス設定を保存', c: 'ok' }]);
   }
   async function loadSlices(f: File) {
@@ -97,7 +97,8 @@ export function useImageTool() {
       const j = JSON.parse(await f.text()); if (!Array.isArray(j.slices)) throw new Error();
       const W = doc.psd.width, H = doc.psd.height;
       begin();
-      doc.slices = j.slices.map((s: any) => { const o: Slice = { id: newSliceId(), name: String(s.name || '') || nextSliceName(doc), x: +s.x || 0, y: +s.y || 0, w: +s.w || 1, h: +s.h || 1, on: s.on !== false }; clampSlice(o, W, H); return o; });
+      doc.slices = j.slices.map((s: any) => { const o: Slice = { id: newSliceId(), name: String(s.name || '') || nextSliceName(doc), x: +s.x || 0, y: +s.y || 0, w: +s.w || 1, h: +s.h || 1, on: s.on !== false };
+        if (s.cx != null) { o.x = (+s.cx || 0) - o.w / 2; o.y = (+s.cy || 0) - o.h / 2; } clampSlice(o, W, H); return o; });
       doc.sliceSel = doc.slices[0]?.id ?? null; end(); if (pane !== 'slice') setPane('slice'); sliceChanged();
       setStatus((j.width && (j.width !== W || j.height !== H)) ? [{ t: `キャンバスサイズが異なります（${j.width}×${j.height}）`, c: 'warn' }] : [{ t: `${doc.slices.length} 件のスライスを読込`, c: 'ok' }]);
     } catch { setStatus([{ t: 'スライス設定を読み込めません', c: 'err' }]); }
