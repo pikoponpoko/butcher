@@ -339,33 +339,33 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
       <aside className="panel inspector" aria-label="GIF書き出し設定">
         <div className="insp">
           <div className="sec">
-            <label className="prop" htmlFor="gTpl"><span>テンプレート</span><select id="gTpl" value={s.tpl} onChange={e => applyTemplate(e.target.value)}>{TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-            <div className="prop"><span>形式</span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]} onChange={f => { s.fmt = f; if (f === 'mp4' && s.bg === 'transparent') s.bg = '#000000'; changed(); }} /></div>
+            <label className="prop pair nl" htmlFor="gTpl"><span>テンプレート</span><select id="gTpl" value={s.tpl} onChange={e => applyTemplate(e.target.value)}>{TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+            <div className="prop pair nl" id="gFmtRow"><span>形式</span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]} onChange={f => { s.fmt = f; if (f === 'mp4' && s.bg === 'transparent') s.bg = '#000000'; changed(); }} /></div>
           </div>
           <div className="sec">
-            <div className="prop"><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
+            <div className="prop pair"><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
               onDraft={num('w', val => { const w = Math.max(1, Math.min(4096, Math.round(val))); s.w = w; lockFromW(); return w; })} />px</span></div>
-            <div className="prop"><span>高さ</span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
+            <div className="prop pair"><span>高さ</span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
               onDraft={num('h', val => { const h = Math.max(1, Math.min(4096, Math.round(val))); if (s.lock && s.sh) s.w = Math.max(1, Math.round(h * s.sw / s.sh)); return h; })} />px <button className="lock" id="gLock" aria-pressed={s.lock} title="縦横比を固定" onClick={() => { s.lock = !s.lock; lockFromW(); changed(); }}><svg width="12" height="12" viewBox="0 0 12 12"><path d="M5 7 7 5M4.2 5.4 3 6.6a2 2 0 0 0 2.8 2.8L7 8.2M7.8 6.6 9 5.4A2 2 0 0 0 6.2 2.6L5 3.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg></button></span></div>
-            <div className="prop" id="gFitRow" hidden={fitHidden}><span>合わせ方</span><Seg id="gFit" value={s.fit} options={[['cover', '切り抜き'], ['contain', '余白']]} onChange={f => { s.fit = f; changed(); }} /></div>
-            <div className="prop" id="gBgRow" hidden={bgHidden}><span>背景</span><Seg id="gBg" value={s.bg} options={[['transparent', '透明'], ['#000000', '黒'], ['#ffffff', '白']]} hiddenValues={s.fmt === 'mp4' ? ['transparent'] : []} onChange={b => { s.bg = b; changed(); }} /></div>
+            <div className="prop pair" id="gFitRow" hidden={fitHidden}><span>合わせ方</span><Seg id="gFit" value={s.fit} options={[['cover', '切り抜き'], ['contain', '余白']]} onChange={f => { s.fit = f; changed(); }} /></div>
+            <div className="prop pair" id="gBgRow" hidden={bgHidden}><span>背景</span><Seg id="gBg" value={s.bg} options={[['transparent', '透明'], ['#000000', '黒'], ['#ffffff', '白']]} hiddenValues={s.fmt === 'mp4' ? ['transparent'] : []} onChange={b => { s.bg = b; changed(); }} /></div>
           </div>
           <div className="sec">
             <div className="prop"><span>範囲</span><span className="unit">
               <DraftInput id="gStart" className="n" type="number" min="0" step="0.01" aria-label="開始" value={s.start.toFixed(2)} onBlur={() => { fieldBlur(); seek(s.start); }}
                 onDraft={num('start', val => Math.max(0, Math.min(val, s.end - 0.01)))} />–<DraftInput id="gEnd" className="n" type="number" min="0" step="0.01" aria-label="終了" value={s.end.toFixed(2)} onBlur={() => { fieldBlur(); seek(s.end); }}
                 onDraft={num('end', val => Math.min(s.dur, Math.max(val, s.start + 0.01)))} />秒</span></div>
-            <div className="prop"><span>FPS</span><span className="unit"><DraftInput id="gFps" className="n" type="number" min="1" max="60" value={s.fps} onBlur={fieldBlur} onDraft={num('fps', val => Math.max(1, Math.min(60, val)))} /></span></div>
-            <label className="prop" htmlFor="gSpeed"><span>速度</span><select id="gSpeed" value={String(s.speed)} onChange={e => { s.speed = +e.target.value; v.playbackRate = s.speed; changed(); }}>{SPEEDS.map(x => <option key={x}>{x}</option>)}</select></label>
-            <label className="prop" htmlFor="gLoop" id="gLoopRow" hidden={s.fmt === 'mp4'}><span>ループ</span><select id="gLoop" value={String(s.loop)} onChange={e => { s.loop = +e.target.value; changed(); }}><option value="0">無限</option><option value="1">1回</option><option value="2">2回</option><option value="3">3回</option></select></label>
+            <div className="prop pair"><span>FPS</span><span className="unit"><DraftInput id="gFps" className="n" type="number" min="1" max="60" value={s.fps} onBlur={fieldBlur} onDraft={num('fps', val => Math.max(1, Math.min(60, val)))} /></span></div>
+            <label className="prop pair" htmlFor="gSpeed"><span>速度</span><select id="gSpeed" value={String(s.speed)} onChange={e => { s.speed = +e.target.value; v.playbackRate = s.speed; changed(); }}>{SPEEDS.map(x => <option key={x}>{x}</option>)}</select></label>
+            <label className="prop pair" htmlFor="gLoop" id="gLoopRow" hidden={s.fmt === 'mp4'}><span>ループ</span><select id="gLoop" value={String(s.loop)} onChange={e => { s.loop = +e.target.value; changed(); }}><option value="0">無限</option><option value="1">1回</option><option value="2">2回</option><option value="3">3回</option></select></label>
           </div>
           <div className="sec">
             <SignRows />
           </div>
           <div className="sec">
-            <div className="prop"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
-            <label className="prop" htmlFor="gColors" id="gColorsRow" hidden={s.fmt !== 'gif'}><span>色数</span><select id="gColors" value={String(s.colors)} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16'].map(x => <option key={x}>{x}</option>)}</select></label>
-            <label className="prop" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span>画質</span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
+            <div className="prop pair"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
+            <label className="prop pair" htmlFor="gColors" id="gColorsRow" hidden={s.fmt !== 'gif'}><span>色数</span><select id="gColors" value={String(s.colors)} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16'].map(x => <option key={x}>{x}</option>)}</select></label>
+            <label className="prop pair" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span>画質</span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
             <div className="prop"><span>設定</span><span className="unit"><button className="link" id="gPLoad" onClick={() => presetRef.current!.click()}>読込</button><button className="link" id="gPSave"
               onClick={() => saveBlob('gif-preset.json', new Blob([JSON.stringify({ type: 'gif-preset', version: 1, ...Object.fromEntries(KEYS.map(k => [k, s[k]])) }, null, 2)], { type: 'application/json' }))}>保存</button>
               <input ref={presetRef} id="gPFile" type="file" accept=".json,application/json" hidden onChange={async e => {

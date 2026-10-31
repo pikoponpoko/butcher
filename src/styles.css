@@ -184,8 +184,15 @@ button, select, input { font: inherit; color: inherit; }
 @media (max-width: 1100px) {
   .gif { grid-template-columns: minmax(0, 1fr); grid-template-rows: 62vh auto; }
   .gif .inspector { border-left: 0; border-top: 1px solid var(--line); }
+  .gif .insp .sec > .prop { grid-template-columns: auto minmax(0, 1fr); }
+  .gif .insp .sec > .prop > .unit { justify-self: stretch; }
+  .gif .insp .unit input.n { flex: 1 1 0; width: 0; min-width: 64px; }
+  .gif .insp .prop.pair select { width: 100%; max-width: none; justify-self: stretch; }
+  .gif .insp .sec > .prop.pair[for="gTpl"] { flex: 1 1 0; min-width: 0; }
+  .gif .insp .sec > .prop.pair[for="gTpl"] select { min-width: 0; }
+  .gif .insp .sec > #gFmtRow { flex: 1 1 0; min-width: 0; }
 }
-@media (max-width: 640px) { .gif { grid-template-rows: 56vh auto; } }
+@media (max-width: 640px) { .gif { grid-template-rows: 56vh auto; } .gif .insp .sec > .prop.pair .seg button { padding: 0 7px; } }
 
 @media (max-width: 1100px) {
   html, body, #root { height: auto; }
