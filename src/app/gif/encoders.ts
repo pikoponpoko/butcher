@@ -3,7 +3,9 @@
 export interface EncodeOpts { fps: number; loop: number; useAlpha: boolean }
 
 let gifLib: Promise<typeof import('gifenc')> | undefined, muxLib: Promise<typeof import('mp4-muxer')> | undefined;
-const loadGif = () => gifLib ||= import('gifenc');
+let gifNow: typeof import('gifenc') | undefined;
+export const loadGif = () => gifLib ||= import('gifenc').then(m => (gifNow = m));
+export const gifLibNow = () => gifNow; // sync access once loaded, for per-frame previews
 const loadMux = () => muxLib ||= import('mp4-muxer');
 
 // ---------- GIF

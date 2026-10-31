@@ -4,14 +4,23 @@ import type { Status } from './image/exporter';
 import { setSign, useSign } from './sign';
 
 // Segmented control: one pressed button per value.
-export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden }: {
-  id?: string; hidden?: boolean; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; hiddenValues?: T[];
+export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden, disabled }: {
+  id?: string; hidden?: boolean; disabled?: boolean; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; hiddenValues?: T[];
 }) {
   return (
     <div className="seg" id={id} hidden={hidden}>
       {options.map(([v, label]) => (
-        <button key={v} data-v={v} aria-pressed={v === value} hidden={hiddenValues?.includes(v)} onClick={() => onChange(v)}>{label}</button>
+        <button key={v} data-v={v} aria-pressed={v === value} disabled={disabled} hidden={hiddenValues?.includes(v)} onClick={() => onChange(v)}>{label}</button>
       ))}
+    </div>
+  );
+}
+
+// Segmented control where any number of buttons can be pressed.
+export function Toggles<T extends string>({ id, values, options, onToggle }: { id?: string; values: T[]; options: [T, ReactNode][]; onToggle: (v: T) => void }) {
+  return (
+    <div className="seg" id={id}>
+      {options.map(([v, label]) => <button key={v} data-v={v} aria-pressed={values.includes(v)} onClick={() => onToggle(v)}>{label}</button>)}
     </div>
   );
 }

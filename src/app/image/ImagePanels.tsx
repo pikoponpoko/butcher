@@ -2,15 +2,20 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as RPointerEvent } from 'react';
 import * as PsdCore from '../../core/psdcore';
 import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe, nameOf, nextSliceName, newSliceId, pathOf, thumbOf } from './model';
-import { toCanvas } from './exporter';
+import { filesPerTarget, toCanvas, variantsOf } from './exporter';
+import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
-import { DraftInput, Seg, SignRows, StatusText } from '../ui';
+import { DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
 import { contrastColor, drawSign, signActive, signLayout, signReady, useSign } from '../sign';
 
 const ICON = {
   chev: <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>,
   eye: <svg width="14" height="10" viewBox="0 0 14 10"><path d="M1 5c1.6-2.7 3.6-4 6-4s4.4 1.3 6 4c-1.6 2.7-3.6 4-6 4S2.6 7.7 1 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /><circle cx="7" cy="5" r="1.8" fill="currentColor" /></svg>,
   eyeOff: <svg width="14" height="10" viewBox="0 0 14 10"><path d="M1 5c1.6-2.7 3.6-4 6-4s4.4 1.3 6 4c-1.6 2.7-3.6 4-6 4S2.6 7.7 1 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M2 9 12 1" stroke="currentColor" strokeWidth="1.2" /></svg>,
+  trash: <svg width="12" height="13" viewBox="0 0 12 13"><path d="M1 3h10M4.5 3V1.5h3V3M2.5 3l.7 8.5h5.6L9.5 3M5 5.5v4M7 5.5v4" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
+  auto: <svg width="13" height="13" viewBox="0 0 13 13"><path d="M1.5 1.5h10v4.25h-10ZM1.5 7.25h10v4.25h-10Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
+  open: <svg width="14" height="12" viewBox="0 0 14 12"><path d="M1 10.5V1.5h4l1.2 1.5H12v2M1 10.5l2-5h10.2l-2 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>,
+  save: <svg width="12" height="13" viewBox="0 0 12 13"><path d="M6 1v7.5M3 5.5l3 3 3-3M1 9v3h10V9" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
   folder: <svg width="18" height="14" viewBox="0 0 18 14"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4l1.5 2h7.5A1.5 1.5 0 0 1 17 4.5v7A1.5 1.5 0 0 1 15.5 13h-13A1.5 1.5 0 0 1 1 11.5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
 };
 const collapsed = new WeakSet<Node>();
@@ -77,12 +82,17 @@ function SliceList({ t, nameRef }: { t: ImageTool; nameRef: RefObject<HTMLInputE
 
 function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice; round: boolean; setRound: (v: boolean) => void; nameRef: RefObject<HTMLInputElement | null> }) {
   const d = t.doc!;
+  // X/Y are the slice center; W/H resize around the center fixed when the field gained focus
+  const c = useRef({ x: 0, y: 0 });
   const num = (key: 'x' | 'y' | 'w' | 'h') => (v: string) => {
-    const n = Math.round(+v); if (!isFinite(n) || v === '') return;
-    s[key] = n; clampSlice(s, d.psd.width, d.psd.height); t.sliceChanged();
+    const n = +v; if (!isFinite(n) || v === '') return;
+    if (key === 'x' || key === 'y') { c.current[key] = n; s[key] = Math.round(n - (key === 'x' ? s.w : s.h) / 2); }
+    else { s[key] = Math.round(n); if (key === 'w') s.x = Math.round(c.current.x - s.w / 2); else s.y = Math.round(c.current.y - s.h / 2); }
+    clampSlice(s, d.psd.width, d.psd.height); t.sliceChanged();
   };
+  const val = { x: s.x + s.w / 2, y: s.y + s.h / 2, w: s.w, h: s.h };
   return (
-    <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') t.begin(); }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
+    <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') { c.current = { x: s.x + s.w / 2, y: s.y + s.h / 2 }; t.begin(); } }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
       <div className="r">
         <input ref={nameRef} id="sName" type="text" aria-label="スライス名" value={s.name}
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
@@ -95,7 +105,7 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
         {(['x', 'y', 'w', 'h'] as const).map(k => (
           <Fragment key={k}>
             <span>{k.toUpperCase()}</span>
-            <DraftInput id={'s' + k.toUpperCase()} className="n" type="number" min={k === 'w' || k === 'h' ? 1 : undefined} value={s[k]} onDraft={num(k)} />
+            <DraftInput id={'s' + k.toUpperCase()} className="n" type="number" min={k === 'w' || k === 'h' ? 1 : undefined} step={k === 'x' || k === 'y' ? 0.5 : undefined} value={val[k]} onDraft={num(k)} />
           </Fragment>
         ))}
       </div>
@@ -107,12 +117,23 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
   const fileRef = useRef<HTMLInputElement>(null), nameRef = useRef<HTMLInputElement>(null);
   const layer = t.pane === 'layer', d = t.doc, s = curSlice(d);
   const selAll = () => { if (!d) return; t.edit(() => (function a(ch?: Node[]) { for (const n of ch || []) { d.checked.add(n._id); a(n.children); } })(d.psd.children)); };
+  // small screens: the selected tab folds/unfolds the panel, the other tab switches and unfolds
+  const pickPane = (v: 'layer' | 'slice') => {
+    if (v !== t.pane) { t.setPane(v); setFold(false); }
+    else if (matchMedia('(max-width: 1100px)').matches) setFold(!fold);
+  };
+  // the panel sits below the preview there, so unfolding opens downward; bring the opened list into view
+  const asideRef = useRef<HTMLElement>(null), wasFold = useRef(fold);
+  useEffect(() => {
+    if (wasFold.current && !fold) asideRef.current!.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    wasFold.current = fold;
+  }, [fold]);
   return (
-    <aside className="panel layers" aria-label="レイヤー">
+    <aside ref={asideRef} className="panel layers" aria-label="レイヤー">
       <div className="ph">
-        <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={t.setPane} />
+        <Seg id="pane" value={t.pane} options={[['layer', 'レイヤー'], ['slice', 'スライス']]} onChange={pickPane} />
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>すべて</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>解除</button></span>
-        <span className="sp" hidden={layer}><button className="link" id="slLoad" onClick={() => fileRef.current!.click()}>読込</button><button className="link" id="slSave" onClick={t.saveSlices}>保存</button>
+        <span className="sp" hidden={layer}><button className="link ic" id="slAuto" aria-label="自動" title="自動" onClick={t.autoSlice}>{ICON.auto}</button><button className="link ic" id="slLoad" aria-label="読込" title="読込" onClick={() => fileRef.current!.click()}>{ICON.open}</button><button className="link ic" id="slSave" aria-label="保存" title="保存" onClick={t.saveSlices}>{ICON.save}</button><button className="link ic" id="slClear" aria-label="全削除" title="全削除" disabled={!d?.slices.length} onClick={t.clearSlices}>{ICON.trash}</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
         <button className="link fold" id="fold" aria-label={fold ? '開く' : '畳む'} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
       </div>
@@ -133,7 +154,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
   const [avail, setAvail] = useState({ w: 0, h: 0 });
   const [drop, setDrop] = useState(false);
   const drag = useRef<Drag | null>(null), bounds = useRef({ x0: 0, y0: 0, x1: 1, y1: 1 });
-  // touch: 2-finger tap = undo, 3-finger tap = redo, a second finger during a slice drag = Shift.
+  // touch: 2-finger tap = undo, 3-finger tap = redo, a second finger during a slice drag = Shift + Alt.
   // A touch drag starts only after the finger moves, so a multi-finger tap never edits a slice.
   const touches = useRef(new Map<number, { x: number; y: number }>()).current;
   const gest = useRef({ max: 0, t0: 0, moved: false, cancel: false });
@@ -227,18 +248,37 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       const pd = pend.current; if (pd && pd.id === e.pointerId) { pend.current = null; startDrag(pd.id, pd.target, pd.p); }
     }
     const g = drag.current; if (!g || !d || g.id !== e.pointerId) return;
-    const shift = e.shiftKey || touches.size >= 2;
+    // Shift keeps the aspect ratio, Alt anchors on the center
+    const shift = e.shiftKey || touches.size >= 2, alt = e.altKey || touches.size >= 2;
     const p = pt(e), DW = d.psd.width, DH = d.psd.height, X0 = -DW, X1 = 2 * DW, Y0 = -DH, Y1 = 2 * DH, dx = p.x - g.p.x, dy = p.y - g.p.y, s = g.s, o = g.o as Slice;
     if (g.type === 'new') {
       const x2 = Math.max(X0, Math.min(X1, Math.round(p.x))), y2 = Math.max(Y0, Math.min(Y1, Math.round(p.y)));
-      let w = Math.abs(x2 - o.x), h = Math.abs(y2 - o.y);
-      if (shift) { w = h = Math.min(Math.max(w, h), x2 < o.x ? o.x - X0 : X1 - o.x, y2 < o.y ? o.y - Y0 : Y1 - o.y); }
-      Object.assign(s, { x: x2 < o.x ? o.x - w : o.x, y: y2 < o.y ? o.y - h : o.y, w, h });
+      if (alt) {
+        // the start point is the center
+        const mx = Math.min(o.x - X0, X1 - o.x), my = Math.min(o.y - Y0, Y1 - o.y);
+        let hw = Math.min(Math.abs(x2 - o.x), mx), hh = Math.min(Math.abs(y2 - o.y), my);
+        if (shift) hw = hh = Math.min(Math.max(hw, hh), mx, my);
+        Object.assign(s, { x: o.x - hw, y: o.y - hh, w: 2 * hw, h: 2 * hh });
+      } else {
+        let w = Math.abs(x2 - o.x), h = Math.abs(y2 - o.y);
+        if (shift) { w = h = Math.min(Math.max(w, h), x2 < o.x ? o.x - X0 : X1 - o.x, y2 < o.y ? o.y - Y0 : Y1 - o.y); }
+        Object.assign(s, { x: x2 < o.x ? o.x - w : o.x, y: y2 < o.y ? o.y - h : o.y, w, h });
+      }
       if (!g.added && s.w >= 2 && s.h >= 2) { g.added = true; d.slices.push(s); d.sliceSel = s.id; }
       if (g.added) t.sliceChanged();
       return;
     }
     if (g.type === 'move') { s.x = Math.round(o.x + dx); s.y = Math.round(o.y + dy); clampSlice(s, DW, DH); }
+    else if (alt) {
+      // resize symmetrically around the center
+      const h = g.h!, cx = o.x + o.w / 2, cy = o.y + o.h / 2, mx = Math.min(cx - X0, X1 - cx), my = Math.min(cy - Y0, Y1 - cy);
+      let hw = h.includes('e') ? o.w / 2 + dx : h.includes('w') ? o.w / 2 - dx : o.w / 2, hh = h.includes('s') ? o.h / 2 + dy : h.includes('n') ? o.h / 2 - dy : o.h / 2;
+      hw = Math.max(0.5, hw); hh = Math.max(0.5, hh);
+      if (shift) { const r = o.w / o.h; if (h.length === 2) { if (hw / r > hh) hh = hw / r; else hw = hh * r; } else if (h === 'e' || h === 'w') hh = hw / r; else hw = hh * r; const q = Math.min(1, mx / hw, my / hh); hw *= q; hh *= q; }
+      else { hw = Math.min(hw, mx); hh = Math.min(hh, my); }
+      const w = Math.max(1, Math.round(2 * hw)), hgt = Math.max(1, Math.round(2 * hh));
+      Object.assign(s, { x: Math.round(cx - w / 2), y: Math.round(cy - hgt / 2), w, h: hgt });
+    }
     else {
       let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h; const h = g.h!;
       if (h.includes('w')) x1 = Math.min(x2 - 1, Math.max(X0, Math.round(o.x + dx)));
@@ -294,6 +334,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
               <div key={s.id} className={'sr' + (s.id === d.sliceSel ? ' sel' : '') + (s.on ? '' : ' off')} data-id={s.id}
                 style={{ left: s.x * k + 'px', top: s.y * k + 'px', width: s.w * k + 'px', height: s.h * k + 'px' }}>
                 <b>{s.name}</b>
+                {s.id === d.sliceSel && <i className="ct" />}
                 {s.id === d.sliceSel && HANDLES.map(h => (
                   <i key={h} className="hd" data-h={h} style={{ left: (h.includes('w') ? 0 : h.includes('e') ? 100 : 50) + '%', top: (h.includes('n') ? 0 : h.includes('s') ? 100 : 50) + '%', cursor: h + '-resize' }} />
                 ))}
@@ -310,7 +351,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
       </div>
       <div className="status">
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
-        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x} y${sc.y}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : '空') + `  ${pv.ms}ms` : ''}</span>
+        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : '空') + `  ${pv.ms}ms` : ''}</span>
         <span id="pvState">{pv && (ws.length ? <span className="warn">{`警告 ${ws.length}`}</span> : <span className="ok">警告なし</span>)}</span>
         <button className="link" id="saveOne" onClick={t.saveOne}>保存</button>
       </div>
@@ -320,7 +361,7 @@ export function Stage({ t, round }: { t: ImageTool; round: boolean }) {
 
 // ---------- right: export settings
 export function Inspector({ t }: { t: ImageTool }) {
-  const { o, set } = t, layer = t.pane === 'layer', ico = o.fmt === 'ico';
+  const { o, set } = t, layer = t.pane === 'layer', ico = o.fmt === 'ico', g = !ico && (o.size === 'sns' || o.size === 'wp') ? o.size : null, sns = g === 'sns', perTarget = filesPerTarget(o);
   const sw = (id: string, key: 'trim' | 'hidden' | 'tree' | 'slFill' | 'allFiles' | 'incWarn', label: ReactNode, cls?: string, hidden?: boolean, onToggle?: () => void) => (
     <label className={'sw' + (cls ? ' ' + cls : '')} htmlFor={id} hidden={hidden}>{label}<input id={id} type="checkbox" checked={o[key]} onChange={e => { set(key, e.target.checked); onToggle?.(); }} /></label>
   );
@@ -329,13 +370,19 @@ export function Inspector({ t }: { t: ImageTool }) {
       <div className="insp">
         <div className="sec">
           <div className="prop pair nl lp" hidden={!layer}><span>方式</span><Seg id="mode" value={o.mode} options={[['layer', 'レイヤー'], ['folder', 'フォルダ'], ['both', '両方']]} onChange={v => set('mode', v)} /></div>
-          <div className="prop pair nl"><span>形式</span><Seg id="fmt" value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
-          <label className="prop" htmlFor="quality" id="qualityRow" hidden={o.fmt === 'png' || o.fmt === 'ico'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
+          <div className="prop pair nl"><span>形式</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
+          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns || o.fmt === 'png' || o.fmt === 'ico'}><span>画質</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec" hidden={ico && !layer}>
-          <div className="prop pair" hidden={ico}><span>サイズ</span><Seg id="size" value={o.size} options={[['orig', '原寸'], ['w', '幅'], ['h', '高さ']]} onChange={v => set('size', v)} /></div>
-          <div className="prop" id="sizeRow" hidden={o.size === 'orig' || ico}><span></span><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
+          <div className="prop pair" hidden={ico}><span>サイズ</span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', '原寸'], ['w', '指定'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={v => set('size', v)} /></div>
+          <div className="prop" id="sizeRow" hidden={ico || (o.size !== 'w' && o.size !== 'h')}><select id="side" aria-label="基準の辺" value={o.size} onChange={e => set('size', e.target.value as 'w')}><option value="w">幅</option><option value="h">高さ</option></select><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label="ピクセル" onChange={e => set('px', e.target.value)} />px
             <select id="basis" aria-label="基準" style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">キャンバス</option><option value="image">画像ごと</option></select></span></div>
+          {g && SERVICES[g].map(([svc, label]) => (
+            <div key={svc} className="prop ps"><span>{label}</span>
+              <Toggles id={'ps-' + svc} values={o.picks} options={IMAGE_PRESETS.filter(x => x.svc === svc).map(x => [x.id, x.label])} onToggle={id => set('picks', toggleId(o.picks, id))} /></div>
+          ))}
+          {g && <div className="prop ps"><span>合わせ方</span><Seg id="fit" value={o.fits[g]} options={[['contain', '余白'], ['cover', '切り抜き']]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
+          {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span>画質</span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
           {sw('trim', 'trim', <span>余白カット</span>, 'prop pair lp', !layer)}
         </div>
         <div className="sec">
@@ -353,7 +400,7 @@ export function Inspector({ t }: { t: ImageTool }) {
         </div>
       </div>
       <div className="foot">
-        <div className="sumrow"><span id="sum" className="num">{`${t.summary.n * (ico ? 4 : 1)} ファイル`}{t.summary.w > 0 && <> · <span className="warn">{`警告あり ${t.summary.w}`}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
+        <div className="sumrow"><span id="sum" className="num">{`${t.summary.n * perTarget} ファイル`}{t.summary.w > 0 && <> · <span className="warn">{`警告あり ${t.summary.w}`}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
         {sw('incWarn', 'incWarn', '警告のある画像も書き出す', undefined, !t.summary.w)}
         <div className="act">
           <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', '個別'], ['dir', 'フォルダ']]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
