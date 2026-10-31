@@ -3,27 +3,35 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type Ref } from 'react';
 import { saveBlob, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
-import { AddHint, DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
+import { AddHint, DraftInput, Pick, Seg, SignRows, StatusText, Toggles } from '../ui';
 import { type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
 import { type Group, type Preset, PICKS_DEFAULT, SERVICES, VIDEO_PRESETS, X_GIF, picked, toggleId } from '../presets';
 import JSZip from 'jszip';
 import { encodeGif, encodeMp4, encodeWebp, gifLibNow, loadGif, webpOK, type EncodeOpts } from './encoders';
 
 type Fmt = 'gif' | 'webp' | 'mp4';
-interface Template { id: string; fmt?: Fmt; w?: number; h?: number; lock?: boolean; fit?: 'cover' | 'contain'; target?: number; fps?: number }
+// output aspect: 'src' = the video's own, 'free' = width and height set separately
+type Ratio = 'src' | '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'free';
+const RATIOS: [Ratio, string][] = [['src', '元'], ['1:1', '1:1'], ['4:3', '4:3'], ['3:4', '3:4'], ['16:9', '16:9'], ['9:16', '9:16'], ['free', '自由']];
+// settings saved before the ratio row had a lock on/off instead
+function fixRatio(o: any) { if (o && o.ratio === undefined && typeof o.lock === 'boolean') o.ratio = o.lock ? 'src' : 'free'; return o; }
+interface Template { id: string; fmt?: Fmt; w?: number; h?: number; ratio?: Ratio; fit?: 'cover' | 'contain'; target?: number; fps?: number }
 // カスタム / Web (one size, GIF or WebP) / SNS and 壁紙 (every checked preset size, zipped)
 type Use = 'custom' | 'web' | Group;
 const TEMPLATES: Template[] = [
   { id: 'custom' },
-  { id: 'web-gif', fmt: 'gif', w: 800, lock: true, target: 2, fps: 15 },
-  { id: 'web-webp', fmt: 'webp', w: 800, lock: true, target: 1, fps: 20 },
-  { id: 'sns', fmt: 'mp4', lock: false, fit: 'cover', target: 0, fps: 30 },
-  { id: 'sns-gif', fmt: 'gif', lock: false, fit: 'cover', target: 15, fps: 15 },
-  { id: 'wp', fmt: 'mp4', lock: false, fit: 'cover', target: 0, fps: 30 },
+  { id: 'web-gif', fmt: 'gif', w: 800, ratio: 'src', target: 2, fps: 15 },
+  { id: 'web-webp', fmt: 'webp', w: 800, ratio: 'src', target: 1, fps: 20 },
+  { id: 'sns', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 30 },
+  { id: 'sns-gif', fmt: 'gif', ratio: 'free', fit: 'cover', target: 15, fps: 15 },
+  { id: 'wp', fmt: 'mp4', ratio: 'free', fit: 'cover', target: 0, fps: 30 },
 ];
 const X_GIF_FRAMES = 350;
-const KEYS = ['fmt', 'w', 'h', 'lock', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot'] as const;
+const KEYS = ['fmt', 'w', 'h', 'ratio', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot'] as const;
 const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
+// ドット choices; a value saved before the list keeps its own entry
+const DOTS = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16];
+const dotSizes = (d: number) => d > 1 && !DOTS.includes(d) ? [...DOTS, d].sort((a, b) => a - b) : DOTS;
 const SPEEDS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2', '3', '4'];
 const fmtMB = (b: number) => (b / 1048576).toFixed(b < 1048576 * 10 ? 2 : 1) + ' MB';
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -32,10 +40,10 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 function initState() {
   const g = {
-    fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, tpl: 'custom', picks: PICKS_DEFAULT,
+    fmt: 'gif' as Fmt, w: 480, h: 270, ratio: 'src' as Ratio, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, dot: 0, tpl: 'custom', picks: PICKS_DEFAULT,
     signLock: undefined as SignColor | undefined, v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, crop: null as Rect | null, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
-  try { Object.assign(g, JSON.parse(localStorage.getItem('gif:settings') || '{}')); } catch {}
+  try { Object.assign(g, fixRatio(JSON.parse(localStorage.getItem('gif:settings') || '{}'))); } catch {}
   g.crop = null; // per video
   return g;
 }
@@ -64,7 +72,9 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   const persist = () => { try { localStorage.setItem('gif:settings', JSON.stringify(Object.fromEntries(KEYS.map(k => [k, s[k]])))); } catch {} };
 
   // ---------- crop frame (切り抜き): a rect in source px with the output's aspect ratio, kept inside the video
-  const cropOn = () => s.v && (s.fit === 'cover' || s.lock);
+  const ratio = () => s.ratio === 'free' ? 0 : s.ratio === 'src' ? (s.sh ? s.sw / s.sh : 0) : (([a, b]) => a / b)(s.ratio.split(':').map(Number));
+  const locked = () => s.ratio !== 'free';
+  const cropOn = () => s.v && (s.fit === 'cover' || locked());
   // r = output aspect; sizes in a preset set each get the frame refitted around the same center
   function getCrop(r = outW() / outH()): Rect {
     const c = s.crop;
@@ -342,7 +352,17 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   }
 
   // ---------- inspector
-  function lockFromW() { if (s.lock && s.sw) s.h = Math.max(1, Math.round(s.w * s.sh / s.sw)); }
+  function lockFromW() { const r = ratio(); if (r) s.h = Math.max(1, Math.round(s.w / r)); }
+  // a new ratio gets the largest centered frame; the output keeps the old px per source px (never above 1)
+  function setRatio(id: Ratio) {
+    const k = !s.v ? 0 : cropOn() ? outW() / getCrop().w : Math.max(s.w / s.sw, s.h / s.sh);
+    const before = s.crop; s.ratio = id; s.crop = null; const r = ratio();
+    if (r && s.v) {
+      const cw = Math.min(s.sw, s.sh * r);
+      s.w = Math.max(1, Math.round(cw * Math.min(1, k))); lockFromW();
+    } else if (r) { const l = Math.max(s.w, s.h); if (r >= 1) s.w = l; else s.w = Math.max(1, Math.round(l * r)); lockFromW(); }
+    pushHist(before); changed();
+  }
   const use = (): Use => s.tpl === 'custom' ? 'custom' : s.tpl.startsWith('web') ? 'web' : s.tpl === 'wp' ? 'wp' : 'sns';
   function changed(custom = true) {
     if (custom && use() === 'web') s.tpl = 'custom';
@@ -360,7 +380,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   function applyTemplate(id: string) {
     const t = TEMPLATES.find(x => x.id === id)!; s.tpl = id;
     if (id !== 'custom') {
-      for (const k of ['fmt', 'w', 'h', 'lock', 'fit', 'target', 'fps'] as const) if (t[k] !== undefined) (s as any)[k] = t[k];
+      for (const k of ['fmt', 'w', 'h', 'ratio', 'fit', 'target', 'fps'] as const) if (t[k] !== undefined) (s as any)[k] = t[k];
       if (id.startsWith('web')) lockFromW(); else presetPreview();
       if (s.fmt === 'mp4' && s.bg === 'transparent') s.bg = '#000000';
     }
@@ -487,7 +507,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
       await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('この動画は読み込めません')); });
       if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
       s.v = true; s.dur = v.duration; s.sw = v.videoWidth; s.sh = v.videoHeight; s.start = 0; s.end = Math.min(s.dur, 6); s.crop = null; hist.current = { u: [], r: [] };
-      if (s.tpl === 'custom' && s.lock) { s.w = Math.min(s.w, s.sw); lockFromW(); }
+      if (s.tpl === 'custom' && locked()) { const r = ratio(); s.w = Math.min(s.w, Math.round(Math.min(s.sw, s.sh * r))); lockFromW(); }
       status('');
       bump();
       await seek(0); drawPreview(); bump();
@@ -505,7 +525,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
   const show = showRes ? (s.fmt === 'mp4' ? 'v' : 'i') : 'pv';
   const p = (t: number) => (t / s.dur * 100) + '%';
   const n = frameCount(), u = use(), sets = u === 'sns' || u === 'wp', maxFrames = u === 'sns' && s.fmt === 'gif' ? X_GIF_FRAMES : 0;
-  const fitHidden = s.lock && s.v, bgHidden = s.fit !== 'contain' || (s.lock && s.v);
+  const fitHidden = locked(), bgHidden = s.fit !== 'contain' || locked();
   const sum = s.v ? <>
     {`${sets ? `${presetSizes().length} ファイル` : `${outW()}×${outH()}`} · ${n} フレーム · ${((s.end - s.start) / s.speed).toFixed(2)}秒`}
     {maxFrames && n > maxFrames ? <> · <span className="warn">{`${maxFrames} フレームを超えています`}</span></> : null}
@@ -545,7 +565,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
         </div>
         <div className="status">
           <span id="gName">{s.v ? `${s.name}  ${s.sw}×${s.sh}` : ''}</span>
-          {cr && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
+          {cr && !showRes && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
           <span id="gOut" className="num" style={{ marginLeft: 'auto' }}>{s.result ? fmtMB(s.result.size) : ''}</span>
           <Seg id="gView" hidden={!s.result} value={s.view} options={[['src', '元'], ['res', '結果']]} onChange={setView} />
           <button className="link" id="gSave" hidden={!s.result} onClick={saveResult}>保存</button>
@@ -553,10 +573,11 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
       </main>
       <aside className="panel inspector" aria-label="GIF書き出し設定">
         <div className="insp">
-          <div className="sec">
+          <div className="sec" id="gHeadSec">
             <div className="prop use"><Seg id="gUse" value={u} options={[['custom', 'カスタム'], ['web', 'Web'], ['sns', 'SNS'], ['wp', '壁紙']]} onChange={setUse} /></div>
             <div className="prop" id="gFmtRow" hidden={u === 'wp'}><span>形式</span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]}
               hiddenValues={u === 'web' ? ['mp4'] : u === 'sns' ? ['webp'] : u === 'wp' ? ['gif', 'webp'] : []} onChange={setFmt} /></div>
+            <div className="prop use" id="gRatioRow" hidden={sets}><Seg id="gRatio" value={s.ratio} options={RATIOS} onChange={setRatio} /></div>
           </div>
           <div className="sec">
             {sets && SERVICES[u].filter(([svc]) => !(s.fmt === 'gif' && svc === 'ig')).map(([svc, label]) => (
@@ -566,7 +587,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
             <div className="prop pair" hidden={sets}><span>幅</span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
               onDraft={num('w', val => { const w = Math.max(1, Math.min(4096, Math.round(val))); s.w = w; lockFromW(); return w; })} />px</span></div>
             <div className="prop pair" hidden={sets}><span>高さ</span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
-              onDraft={num('h', val => { const h = Math.max(1, Math.min(4096, Math.round(val))); if (s.lock && s.sh) s.w = Math.max(1, Math.round(h * s.sw / s.sh)); return h; })} />px <button className="lock" id="gLock" aria-pressed={s.lock} title="縦横比を固定" onClick={() => { s.lock = !s.lock; lockFromW(); changed(); }}><svg width="12" height="12" viewBox="0 0 12 12"><path d="M5 7 7 5M4.2 5.4 3 6.6a2 2 0 0 0 2.8 2.8L7 8.2M7.8 6.6 9 5.4A2 2 0 0 0 6.2 2.6L5 3.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg></button></span></div>
+              onDraft={num('h', val => { const h = Math.max(1, Math.min(4096, Math.round(val))); const r = ratio(); if (r) s.w = Math.max(1, Math.round(h * r)); return h; })} />px</span></div>
             <div className="prop pair" id="gFitRow" hidden={fitHidden}><span>合わせ方</span><Seg id="gFit" value={s.fit} options={[['cover', '切り抜き'], ['contain', '余白']]} onChange={f => { s.fit = f; changed(); }} /></div>
             <div className="prop pair" id="gBgRow" hidden={bgHidden}><span>背景</span><Seg id="gBg" value={s.bg} options={[['transparent', '透明'], ['#000000', '黒'], ['#ffffff', '白']]} hiddenValues={s.fmt === 'mp4' ? ['transparent'] : []} onChange={b => { s.bg = b; changed(); }} /></div>
           </div>
@@ -584,15 +605,14 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
           </div>
           <div className="sec">
                         <div className="prop pair"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
-            <div className="prop pair" id="gDotRow"><span>ドット</span><span className="unit"><DraftInput id="gDot" className="n" type="number" min="1" max="64" placeholder="なし" value={s.dot > 1 ? s.dot : ''} onBlur={fieldBlur}
-              onDraft={text => { const val = +text; if (!isFinite(val)) return; s.dot = Math.max(0, Math.min(64, Math.round(val))); changed(); }} />px
+            <div className="prop pair" id="gDotRow"><span>ドット</span><span className="unit"><Pick id="gDot" label="ドットの大きさ" value={dotOn() ? s.dot : 0} options={dotSizes(s.dot).map(d => [d, d ? d + 'px' : 'なし', d || 'なし'])} onChange={d => { s.dot = d; changed(); }} />
               <select id="gColors" aria-label="色数" value={String(s.colors)} hidden={s.fmt !== 'gif' && !dotOn()} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16', '8', '4'].map(x => <option key={x} value={x}>{x}色</option>)}</select></span></div>
             <label className="prop pair" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span>画質</span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
             <div className="prop"><span>設定</span><span className="unit"><button className="link" id="gPLoad" onClick={() => presetRef.current!.click()}>読込</button><button className="link" id="gPSave"
               onClick={() => saveBlob('gif-preset.json', new Blob([JSON.stringify({ type: 'gif-preset', version: 1, ...Object.fromEntries(KEYS.map(k => [k, s[k]])) }, null, 2)], { type: 'application/json' }))}>保存</button>
               <input ref={presetRef} id="gPFile" type="file" accept=".json,application/json" hidden onChange={async e => {
                 const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
-                try { const j = JSON.parse(await f.text()); for (const k of KEYS) if (j[k] !== undefined) (s as any)[k] = j[k]; changed(); status('設定を読込', 'ok'); }
+                try { const j = fixRatio(JSON.parse(await f.text())); for (const k of KEYS) if (j[k] !== undefined) (s as any)[k] = j[k]; changed(); status('設定を読込', 'ok'); }
                 catch { status('設定を読み込めません', 'err'); }
               }} /></span></div>
           </div>
