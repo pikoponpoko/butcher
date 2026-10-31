@@ -1,5 +1,5 @@
 // Small shared controls.
-import { useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { Status } from './image/exporter';
 import { setSign, useSign } from './sign';
 
@@ -23,6 +23,40 @@ export function Seg<T extends string>({ id, value, options, onChange, hiddenValu
         <button key={v} data-v={v} aria-pressed={v === value} disabled={disabled} hidden={hiddenValues?.includes(v)} onClick={() => onChange(v)}>{label}</button>
       ))}
     </div>
+  );
+}
+
+// Small dropdown: a grid of choices opens under the button (a native select fills the screen on phones).
+export function Pick<T extends string | number>({ id, label, value, options, onChange }: {
+  id?: string; label: string; value: T; options: [T, ReactNode, ReactNode?][]; onChange: (v: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null), list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    addEventListener('pointerdown', off); addEventListener('keydown', key); addEventListener('resize', place); addEventListener('scroll', place, true);
+    return () => { removeEventListener('pointerdown', off); removeEventListener('keydown', key); removeEventListener('resize', place); removeEventListener('scroll', place, true); };
+  }, [open]);
+  // fixed under the button so scrolling panels don't clip it; kept on screen (left / up when there is no room)
+  function place() {
+    const l = list.current, b = ref.current; if (!l || !b) return;
+    const r = b.getBoundingClientRect(), w = l.offsetWidth, h = l.offsetHeight, vw = document.documentElement.clientWidth, vh = innerHeight;
+    l.style.left = Math.max(8, Math.min(r.left, vw - 8 - w)) + 'px';
+    l.style.top = (r.bottom + 4 + h > vh - 8 && r.top - 4 - h >= 8 ? r.top - 4 - h : r.bottom + 4) + 'px';
+  }
+  useLayoutEffect(() => { if (open) place(); }, [open]);
+  const cur = options.find(o => o[0] === value);
+  return (
+    <span className="pick" ref={ref}>
+      <button id={id} className="pickb" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>{cur ? cur[1] : ''}</span><svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open && <div className="pickl" role="listbox" ref={list}>
+        {options.map(([v, l, short]) => <button key={v} role="option" aria-selected={v === value} onClick={() => { onChange(v); setOpen(false); }}>{short ?? l}</button>)}
+      </div>}
+    </span>
   );
 }
 

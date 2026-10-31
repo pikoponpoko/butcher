@@ -3,7 +3,7 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type Ref } from 'react';
 import { saveBlob, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
-import { AddHint, DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
+import { AddHint, DraftInput, Pick, Seg, SignRows, StatusText, Toggles } from '../ui';
 import { type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
 import { type Group, type Preset, PICKS_DEFAULT, SERVICES, VIDEO_PRESETS, X_GIF, picked, toggleId } from '../presets';
 import JSZip from 'jszip';
@@ -605,8 +605,7 @@ export function GifTool({ active, ref, onPick }: { active: boolean; ref: Ref<Gif
           </div>
           <div className="sec">
                         <div className="prop pair"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
-            <div className="prop pair" id="gDotRow"><span>ドット</span><span className="unit"><select id="gDot" aria-label="ドットの大きさ" value={String(dotOn() ? s.dot : 0)} onChange={e => { s.dot = +e.target.value; changed(); }}>
-              {dotSizes(s.dot).map(d => <option key={d} value={d}>{d ? d + 'px' : 'なし'}</option>)}</select>
+            <div className="prop pair" id="gDotRow"><span>ドット</span><span className="unit"><Pick id="gDot" label="ドットの大きさ" value={dotOn() ? s.dot : 0} options={dotSizes(s.dot).map(d => [d, d ? d + 'px' : 'なし', d || 'なし'])} onChange={d => { s.dot = d; changed(); }} />
               <select id="gColors" aria-label="色数" value={String(s.colors)} hidden={s.fmt !== 'gif' && !dotOn()} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16', '8', '4'].map(x => <option key={x} value={x}>{x}色</option>)}</select></span></div>
             <label className="prop pair" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span>画質</span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
             <div className="prop"><span>設定</span><span className="unit"><button className="link" id="gPLoad" onClick={() => presetRef.current!.click()}>読込</button><button className="link" id="gPSave"
