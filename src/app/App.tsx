@@ -69,7 +69,8 @@ export function App() {
         <div className="bar-r">
           <button className="btn img-only" onClick={() => fileRef.current!.click()}>開く</button>
           <button className="btn gif-only" onClick={pickVideo}>開く</button>
-          <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
+          {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
+          <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
         </div>
       </header>
