@@ -44,7 +44,8 @@ function LayerTree({ t }: { t: ImageTool }) {
       rows.push(
         <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ paddingLeft: 8 + depth * 14 + 'px' }}
           onClick={() => t.setSel(t.sel === n ? null : n)}>
-          <span className="eye" title={n.hidden ? '非表示' : '表示'}>{n.hidden ? ICON.eyeOff : ICON.eye}</span>
+          <button className="eye" aria-label={n.hidden ? '表示' : '非表示'} aria-pressed={!n.hidden}
+            onClick={e => { e.stopPropagation(); t.edit(() => { n.hidden = !n.hidden; }); }}>{n.hidden ? ICON.eyeOff : ICON.eye}</button>
           <button className={'tw' + (collapsed.has(n) ? ' closed' : '')} aria-label="開閉" style={n.children ? undefined : { visibility: 'hidden' }}
             onClick={n.children ? e => { e.stopPropagation(); collapsed.has(n) ? collapsed.delete(n) : collapsed.add(n); t.bump(); } : undefined}>{n.children ? ICON.chev : null}</button>
           {n.children ? <span className="thumb folder">{ICON.folder}</span> : <span className="thumb" style={thumbStyle} />}
