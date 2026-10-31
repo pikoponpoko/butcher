@@ -23,8 +23,8 @@ button, select, input { font: inherit; color: inherit; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; }
 .warn { color: var(--warn); } .muted { color: var(--muted); } .ok { color: var(--ok); } .err { color: var(--danger); }
 
-.app { display: grid; height: 100%; grid-template-columns: 260px minmax(0, 1fr) 288px; grid-template-rows: 44px minmax(0, 1fr);
-  grid-template-areas: "bar bar bar" "layers center insp"; }
+.app { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) 260px 288px; grid-template-rows: 44px minmax(0, 1fr);
+  grid-template-areas: "bar bar bar" "center layers insp"; }
 .bar { grid-area: bar; } .layers { grid-area: layers; } .center { grid-area: center; } .inspector { grid-area: insp; }
 .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; background: var(--panel); border-bottom: 1px solid var(--line);
   padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); padding-block: 0; min-width: 0; }
@@ -42,7 +42,7 @@ button, select, input { font: inherit; color: inherit; }
 .bar select { height: 27px; border: 1px solid var(--line); background: var(--field); border-radius: 6px; padding: 0 6px; max-width: 170px; }
 
 .panel { background: var(--panel); min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-.layers { border-right: 1px solid var(--line); }
+.layers { border-left: 1px solid var(--line); }
 .inspector { border-left: 1px solid var(--line); }
 .ph { height: 31px; overflow: hidden; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); color: var(--muted); flex: none; }
 .ph b { color: var(--fg); font-weight: 600; margin-right: auto; }
@@ -209,8 +209,8 @@ button, select, input { font: inherit; color: inherit; }
 
 @media (max-width: 1100px) {
   html, body, #root { height: auto; }
-  .app { height: auto; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: 44px 62vh auto;
-    grid-template-areas: "bar bar" "layers center" "insp insp"; }
+  .app { height: auto; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: 44px 62vh auto;
+    grid-template-areas: "bar bar" "center layers" "insp insp"; }
   .layers { min-height: 0; }
   .inspector { border-left: 0; border-top: 1px solid var(--line); }
   .insp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -218,7 +218,7 @@ button, select, input { font: inherit; color: inherit; }
   .insp .sec { border-right: 1px solid var(--line); }
   .foot { border-top: 1px solid var(--line); }
   .act { justify-content: flex-start; gap: 12px; }
-  #stage { padding: 0; } #stage.slicing { padding: 10px; }
+  #stage { padding: 0; } #stage.slicing { overflow: visible; z-index: 1; }
   .insp .sec { display: flex; flex-wrap: wrap; align-content: start; column-gap: 16px; }
   .insp .sec > * { flex: 1 0 100%; }
   .insp .sec > .prop.pair { flex: 1 1 auto; grid-template-columns: auto minmax(0, 1fr); }
@@ -235,7 +235,7 @@ button, select, input { font: inherit; color: inherit; }
 }
 @media (max-width: 640px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; grid-template-areas: "bar" "center" "layers" "insp"; }
-  .layers { border-right: 0; border-bottom: 1px solid var(--line); }
+  .layers { border-left: 0; border-bottom: 1px solid var(--line); }
   .tree { max-height: 300px; }
   .fold { display: inline-flex; }
   #stage { flex: none; aspect-ratio: var(--ar, 4 / 3); max-height: calc(100svh - var(--bar-h, 44px) - 61px); }
