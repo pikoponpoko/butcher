@@ -54,7 +54,6 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null);
   const pickVideo = () => gFileRef.current!.click();
   const [gifSt, setGifSt] = useState({ open: false, ready: false });
-  const plus = <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 1v10M1 6h10" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>;
 
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '')}>
@@ -72,8 +71,8 @@ export function App() {
         </div>
         <div className="bar-r">
           <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></button>
-          <button className="link ic img-only" id="add" hidden={!t.docs.length} aria-label={tr('開く')} title={tr('開く')} onClick={() => fileRef.current!.click()}>{plus}</button>
-          <button className="link ic gif-only" id="gAdd" hidden={!gifSt.open} aria-label={tr('開く')} title={tr('開く')} onClick={pickVideo}>{plus}</button>
+          <button className="btn img-only" id="add" hidden={!t.docs.length} onClick={() => fileRef.current!.click()}><Lbl>{tr('追加')}</Lbl></button>
+          <button className="btn gif-only" id="gAdd" hidden={!gifSt.open} onClick={pickVideo}><Lbl>{tr('追加')}</Lbl></button>
           <button className="btn primary img-only" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}><Lbl>{tr('書き出し')}</Lbl></button>
           <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready} onClick={() => gif.current?.export()}><Lbl>{tr('書き出し')}</Lbl></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
