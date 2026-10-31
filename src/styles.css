@@ -190,9 +190,9 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 #gCrop .sr { background: none; }
 #gCrop .hd::after { content: ""; position: absolute; inset: -8px; }
 @media (pointer: coarse) { #gCrop .hd::after { inset: -14px; } }
-.tl { flex: none; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--panel); }
-.tl .play { width: 28px; height: 28px; flex: none; border: 1px solid var(--line); background: var(--field); border-radius: 6px; display: grid; place-items: center; cursor: pointer; color: var(--fg); padding: 0; }
-.track { position: relative; flex: 1; height: 36px; border-radius: 4px; overflow: hidden; background: var(--field); cursor: pointer; touch-action: none; }
+.tl { flex: none; display: flex; align-items: center; gap: 8px; height: 60px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--panel); }
+.tl .play { width: 44px; height: 44px; flex: none; border: 1px solid var(--line); background: var(--field); border-radius: 6px; display: grid; place-items: center; cursor: pointer; color: var(--fg); padding: 0; }
+.track { position: relative; flex: 1; height: 44px; border-radius: 4px; overflow: hidden; background: var(--field); cursor: pointer; touch-action: none; }
 .track canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .track .dim { position: absolute; top: 0; bottom: 0; background: var(--bg); opacity: .7; pointer-events: none; }
 .track .rng { position: absolute; top: 0; bottom: 0; box-sizing: border-box; border: 2px solid var(--accent); border-left-width: 8px; border-right-width: 8px; border-radius: 4px; pointer-events: none; }
