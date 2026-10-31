@@ -147,14 +147,14 @@ export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice 
   return [{ t: tr('{n} ファイルを書き出し', { n: files.length }), c: 'ok' }];
 }
 
-declare global { function showDirectoryPicker(o?: { mode?: string }): Promise<FileSystemDirectoryHandle> }
+declare global { function showDirectoryPicker(o?: { id?: string; mode?: string }): Promise<FileSystemDirectoryHandle> }
 // Returns the final status; `progress` reports per-file progress, `noDir` is called when folder output isn't available.
 export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void): Promise<Status> {
   const zip = new JSZip(), report: string[] = [], vs = variantsOf(o);
   if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
   let dir: FileSystemDirectoryHandle | null = null;
   if (o.out === 'dir') {
-    try { dir = await showDirectoryPicker({ mode: 'readwrite' }); }
+    try { dir = await showDirectoryPicker({ id: 'butcher-out', mode: 'readwrite' }); }
     catch (e: any) { if (e.name === 'AbortError') return [{ t: tr('保存を取り消しました') }]; noDir(); return [{ t: tr('この環境ではフォルダに保存できません'), c: 'err' }]; }
   }
   let written = 0, skipped = 0;

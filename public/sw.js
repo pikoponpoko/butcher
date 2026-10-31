@@ -12,7 +12,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);
+    for (const k of await caches.keys()) if (k !== CACHE && k !== 'butcher-share') await caches.delete(k);
     const c = await caches.open(CACHE), url = (p) => new URL(p, self.registration.scope).href;
     const prev = await c.match(LIST).then((r) => (r ? r.json() : []), () => []);
     const keep = new Set([...ASSETS, ...prev].map(url));
@@ -24,6 +24,20 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
+  // share target (manifest.webmanifest): keep the shared files for the page, then open it
+  if (req.method === 'POST' && new URL(req.url).searchParams.has('share')) {
+    e.respondWith((async () => {
+      const form = await req.formData(), c = await caches.open('butcher-share');
+      for (const k of await c.keys()) await c.delete(k);
+      const files = form.getAll('files').filter((f) => typeof f !== 'string');
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        await c.put(`./__share/${i}`, new Response(f, { headers: { 'content-type': f.type || 'application/octet-stream', 'x-name': encodeURIComponent(f.name || '') } }));
+      }
+      return Response.redirect(new URL('./?shared', self.registration.scope).href, 303);
+    })());
+    return;
+  }
   if (req.method !== 'GET' || !req.url.startsWith('http')) return;
   const nav = req.mode === 'navigate';
   const put = (res) => {
