@@ -5,8 +5,8 @@ import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe,
 import { filesPerTarget, toCanvas, variantsOf } from './exporter';
 import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
-import { AddHint, DraftInput, Seg, SignRows, StatusText, Toggles } from '../ui';
-import { tr } from '../i18n';
+import { AddHint, DraftInput, Lbl, altOptions, Seg, SignRows, StatusText, Toggles } from '../ui';
+import { tr, trAlt } from '../i18n';
 import { contrastColor, drawSign, signActive, signLayout, signReady, useSign } from '../sign';
 
 const ICON = {
@@ -100,8 +100,8 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
           onBlur={() => { if (!s.name.trim()) { s.name = nextSliceName(d); t.sliceChanged(); } }}
           onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); }} />
-        <div className="seg"><button id="sRound" aria-pressed={round} title={tr('丸く切り抜いたときの見え方')} onClick={() => setRound(!round)}>{tr('丸')}</button></div>
-        <button className="link" id="sDel" onClick={t.deleteSlice}>{tr('削除')}</button>
+        <div className="seg"><button id="sRound" aria-pressed={round} title={tr('丸く切り抜いたときの見え方')} onClick={() => setRound(!round)}><Lbl>{tr('丸')}</Lbl></button></div>
+        <button className="link" id="sDel" onClick={t.deleteSlice}><Lbl>{tr('削除')}</Lbl></button>
       </div>
       <div className="g">
         {(['x', 'y', 'w', 'h'] as const).map(k => (
@@ -128,7 +128,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
     <aside className="panel layers" aria-label={tr('レイヤー')}>
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', tr('レイヤー')], ['slice', tr('スライス')]]} onChange={pickPane} />
-        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}>{tr('すべて')}</button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}>{tr('解除')}</button></span>
+        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}><Lbl>{tr('すべて')}</Lbl></button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}><Lbl other={trAlt('解除')}>{tr('解除')}</Lbl></button></span>
         <span className="sp" hidden={layer}><button className="link ic" id="slAuto" aria-label={tr('自動')} title={tr('自動')} onClick={t.autoSlice}>{ICON.auto}</button><button className="link ic" id="slLoad" aria-label={tr('読込')} title={tr('読込')} onClick={() => fileRef.current!.click()}>{ICON.open}</button><button className="link ic" id="slSave" aria-label={tr('保存')} title={tr('保存')} onClick={t.saveSlices}>{ICON.save}</button><button className="link ic" id="slClear" aria-label={tr('全削除')} title={tr('全削除')} disabled={!d?.slices.length} onClick={t.clearSlices}>{ICON.trash}</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
         <button className="link fold" id="fold" aria-label={tr(fold ? '開く' : '畳む')} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
@@ -416,7 +416,7 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
         <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) + `  ${pv.ms}ms` : ''}</span>
         <span id="pvState">{pv && (ws.length ? <span className="warn">{tr('警告 {n}', { n: ws.length })}</span> : <span className="ok">{tr('警告なし')}</span>)}</span>
-        <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}>{tr('保存')}</button>
+        <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}><Lbl>{tr('保存')}</Lbl></button>
       </div>
     </main>
   );
@@ -432,25 +432,25 @@ export function Inspector({ t }: { t: ImageTool }) {
     <aside className="panel inspector" aria-label={tr('書き出し設定')}>
       <div className="insp">
         <div className="sec">
-          <div className="prop pair nl lp" hidden={!layer}><span>{tr('方式')}</span><Seg id="mode" value={o.mode} options={[['layer', tr('レイヤー')], ['folder', tr('フォルダ')], ['both', tr('両方')]]} onChange={v => set('mode', v)} /></div>
-          <div className="prop pair nl"><span>{tr('形式')}</span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
-          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns || o.fmt === 'png' || o.fmt === 'ico'}><span>{tr('画質')}</span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
+          <div className="prop pair nl lp" hidden={!layer}><span><Lbl>{tr('方式')}</Lbl></span><Seg id="mode" value={o.mode} options={[['layer', tr('レイヤー')], ['folder', tr('フォルダ')], ['both', tr('両方')]]} onChange={v => set('mode', v)} /></div>
+          <div className="prop pair nl"><span><Lbl>{tr('形式')}</Lbl></span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
+          <label className="prop" htmlFor="quality" id="qualityRow" hidden={sns || o.fmt === 'png' || o.fmt === 'ico'}><span><Lbl>{tr('画質')}</Lbl></span><span className="unit"><input id="quality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>
         </div>
         <div className="sec" hidden={ico && !layer}>
-          <div className="prop pair" hidden={ico}><span>{tr('サイズ')}</span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', tr('原寸')], ['w', tr('指定')], ['sns', tr('SNS')], ['wp', tr('壁紙')]]} onChange={v => set('size', v)} /></div>
-          <div className="prop" id="sizeRow" hidden={ico || (o.size !== 'w' && o.size !== 'h')}><select id="side" aria-label={tr('基準の辺')} value={o.size} onChange={e => set('size', e.target.value as 'w')}><option value="w">{tr('幅')}</option><option value="h">{tr('高さ')}</option></select><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label={tr('ピクセル')} onChange={e => set('px', e.target.value)} />px
-            <select id="basis" aria-label={tr('基準')} style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">{tr('キャンバス')}</option><option value="image">{tr('画像ごと')}</option></select></span></div>
+          <div className="prop pair" hidden={ico}><span><Lbl>{tr('サイズ')}</Lbl></span><Seg id="size" value={o.size === 'h' ? 'w' : o.size} options={[['orig', tr('原寸')], ['w', <Lbl other={trAlt('指定')}>{tr('指定')}</Lbl>], ['sns', tr('SNS')], ['wp', tr('壁紙')]]} onChange={v => set('size', v)} /></div>
+          <div className="prop" id="sizeRow" hidden={ico || (o.size !== 'w' && o.size !== 'h')}><select id="side" aria-label={tr('基準の辺')} value={o.size} onChange={e => set('size', e.target.value as 'w')}><option value="w">{tr('幅')}</option><option value="h">{tr('高さ')}</option>{altOptions([['幅'], ['高さ']])}</select><span className="unit" style={{ gridColumn: '2 / -1' }}><input id="px" className="n" type="number" min="1" max="20000" value={o.px} aria-label={tr('ピクセル')} onChange={e => set('px', e.target.value)} />px
+            <select id="basis" aria-label={tr('基準')} style={{ marginLeft: '4px' }} value={o.basis} onChange={e => set('basis', e.target.value as 'canvas')}><option value="canvas">{tr('キャンバス')}</option><option value="image">{tr('画像ごと')}</option>{altOptions([['キャンバス'], ['画像ごと']])}</select></span></div>
           {g && SERVICES[g].map(([svc, label]) => (
             <div key={svc} className="prop ps"><span>{label}</span>
               <Toggles id={'ps-' + svc} values={o.picks} options={IMAGE_PRESETS.filter(x => x.svc === svc).map(x => [x.id, tr(x.label)])} onToggle={id => set('picks', toggleId(o.picks, id))} /></div>
           ))}
-          {g && <div className="prop ps"><span>{tr('合わせ方')}</span><Seg id="fit" value={o.fits[g]} options={[['contain', tr('余白')], ['cover', tr('切り抜き')]]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
-          {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span>{tr('画質')}</span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
-          {sw('trim', 'trim', <span>{tr('余白カット')}</span>, 'prop pair lp', !layer)}
+          {g && <div className="prop ps"><span><Lbl>{tr('合わせ方')}</Lbl></span><Seg id="fit" value={o.fits[g]} options={[['contain', tr('余白')], ['cover', tr('切り抜き')]]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
+          {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span><Lbl>{tr('画質')}</Lbl></span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
+          {sw('trim', 'trim', <span><Lbl>{tr('余白カット')}</Lbl></span>, 'prop pair lp', !layer)}
         </div>
         <div className="sec">
-          <label className="prop pair fill" htmlFor="prefix"><span>{tr('接頭辞')}</span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
-          <label className="prop pair fill" htmlFor="suffix"><span>{tr('接尾辞')}</span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="prefix"><span><Lbl>{tr('接頭辞')}</Lbl></span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="suffix"><span><Lbl>{tr('接尾辞')}</Lbl></span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
         </div>
         <div className="sec">
           <SignRows />
@@ -467,7 +467,7 @@ export function Inspector({ t }: { t: ImageTool }) {
         {sw('incWarn', 'incWarn', tr('警告のある画像も書き出す'), undefined, !t.summary.w)}
         <div className="act">
           <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', tr('個別')], ['dir', tr('フォルダ|out')]]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
-          <button className="btn primary" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}>{tr('書き出し')}</button>
+          <button className="btn primary" id="export" disabled={t.busy || !t.doc} onClick={t.doExport}><Lbl>{tr('書き出し')}</Lbl></button>
         </div>
       </div>
     </aside>
