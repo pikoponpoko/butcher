@@ -3,7 +3,8 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type Ref } from 'react';
 import { saveBlob, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
-import { DraftInput, Seg, StatusText } from '../ui';
+import { DraftInput, Seg, SignRows, StatusText } from '../ui';
+import { type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
 import { encodeGif, encodeMp4, encodeWebp, webpOK, type EncodeOpts } from './encoders';
 
 type Fmt = 'gif' | 'webp' | 'mp4';
@@ -31,7 +32,7 @@ const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 function initState() {
   const g = {
     fmt: 'gif' as Fmt, w: 480, h: 270, lock: true, fit: 'cover' as 'cover' | 'contain', bg: '#000000', fps: 15, speed: 1, loop: 0, target: 0, colors: 256, q: 80, tpl: 'custom',
-    v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
+    signLock: undefined as SignColor | undefined, v: false, name: '', url: '', dur: 0, sw: 0, sh: 0, start: 0, end: 0, result: null as Blob | null, resUrl: '', view: 'src' as 'src' | 'res', busy: false,
   };
   try { Object.assign(g, JSON.parse(localStorage.getItem('gif:settings') || '{}')); } catch {}
   return g;
@@ -61,13 +62,14 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
   const persist = () => { try { localStorage.setItem('gif:settings', JSON.stringify(Object.fromEntries(KEYS.map(k => [k, s[k]])))); } catch {} };
 
   // ---------- drawing
-  function drawFit(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, W: number, H: number) {
+  function drawFit(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, W: number, H: number, sign = true) {
     ctx.clearRect(0, 0, W, H);
     if (s.fit === 'contain' && !alpha()) { ctx.fillStyle = s.fmt === 'mp4' && s.bg === 'transparent' ? '#000000' : s.bg; ctx.fillRect(0, 0, W, H); }
     const k = s.fit === 'cover' ? Math.max(W / s.sw, H / s.sh) : Math.min(W / s.sw, H / s.sh);
     const dw = s.sw * k, dh = s.sh * k;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    if (sign) drawSign(ctx, 0, 0, W, H, getSign(), s.signLock);
   }
   function seek(t: number) {
     return new Promise<void>(res => {
@@ -108,6 +110,11 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     ro.observe(st); return () => ro.disconnect();
   }, []);
   useEffect(() => { if (active && s.v) drawPreview(); }, [active]);
+  const sign = useSign(), signSeen = useRef(sign);
+  useEffect(() => {
+    if (signSeen.current === sign) return; signSeen.current = sign;
+    clearResult(); drawPreview(); signReady(sign).then(() => live.current.drawPreview());
+  }, [sign]);
   // Space plays / pauses the preview unless a field has focus
   const playRef = useRef(setPlaying); playRef.current = setPlaying;
   useEffect(() => {
@@ -223,6 +230,15 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     return frames;
   }
 
+  // 'auto' signature color for a whole export: judged from 5 frames across the range so it doesn't flicker
+  async function lockSignColor(W: number, H: number) {
+    const sg = getSign(); if (!signActive(sg) || sg.color !== 'auto') return undefined;
+    const c = new OffscreenCanvas(W, H), ctx = c.getContext('2d', { willReadFrequently: true })!, parts: Uint8ClampedArray[] = [];
+    for (let i = 0; i < 5; i++) { await seek(s.start + (s.end - s.start) * i / 4); drawFit(ctx, W, H, false); parts.push(sampleUnder(ctx, 0, 0, W, H, sg)); }
+    const all = new Uint8ClampedArray(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
+    return contrastColor(all);
+  }
+
   // ---------- export with target size search
   async function doExport() {
     if (!s.v || s.busy) return;
@@ -230,6 +246,8 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
     const W = outW(), H = outH(), target = s.target ? s.target * 1048576 : 0;
     const eo: EncodeOpts = { fps: effFps(), loop: s.loop, useAlpha: alpha() };
     try {
+      await signReady();
+      s.signLock = await lockSignColor(W, H);
       let best: Blob | null = null;
       if (s.fmt === 'mp4') best = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), t => status(t));
       else {
@@ -253,7 +271,7 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
       if (target && best!.size > target) { status(`目標 ${s.target} MB に届きません（最小 ${fmtMB(best!.size)}）`, 'warn'); setKeep(true); }
       else await saveResult();
     } catch (e: any) { status(String(e.message || e), 'err'); }
-    finally { s.busy = false; drawPreview(); bump(); }
+    finally { s.busy = false; s.signLock = undefined; drawPreview(); bump(); }
   }
 
   // ---------- open
@@ -340,6 +358,9 @@ export function GifTool({ active, ref }: { active: boolean; ref: Ref<GifToolApi>
             <div className="prop"><span>FPS</span><span className="unit"><DraftInput id="gFps" className="n" type="number" min="1" max="60" value={s.fps} onBlur={fieldBlur} onDraft={num('fps', val => Math.max(1, Math.min(60, val)))} /></span></div>
             <label className="prop" htmlFor="gSpeed"><span>速度</span><select id="gSpeed" value={String(s.speed)} onChange={e => { s.speed = +e.target.value; v.playbackRate = s.speed; changed(); }}>{SPEEDS.map(x => <option key={x}>{x}</option>)}</select></label>
             <label className="prop" htmlFor="gLoop" id="gLoopRow" hidden={s.fmt === 'mp4'}><span>ループ</span><select id="gLoop" value={String(s.loop)} onChange={e => { s.loop = +e.target.value; changed(); }}><option value="0">無限</option><option value="1">1回</option><option value="2">2回</option><option value="3">3回</option></select></label>
+          </div>
+          <div className="sec">
+            <SignRows />
           </div>
           <div className="sec">
             <div className="prop"><span>目標サイズ</span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder="なし" value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>

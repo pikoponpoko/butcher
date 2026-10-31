@@ -1,6 +1,7 @@
 // Small shared controls.
 import { useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { Status } from './image/exporter';
+import { setSign, useSign } from './sign';
 
 // Segmented control: one pressed button per value.
 export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden }: {
@@ -30,4 +31,20 @@ export function DraftInput({ value, onDraft, onBlur, onFocus, ...rest }: Omit<In
 
 export function StatusText({ s }: { s: Status }) {
   return <>{s.map((p, i) => p.c ? <span key={i} className={p.c}>{p.t}</span> : p.t)}</>;
+}
+
+// Name / credit stamp settings, shared by the image and GIF inspectors.
+export function SignRows() {
+  const s = useSign();
+  return <>
+    <div className="prop signrow">
+      <span>署名</span>
+      <input className="t" type="text" aria-label="署名" value={s.text} onChange={e => { const text = e.target.value; setSign(!s.text.trim() && text.trim() ? { text, on: true } : { text }); }} onKeyDown={e => e.stopPropagation()} />
+      <label className="sw"><input type="checkbox" aria-label="署名を入れる" checked={s.on} onChange={e => setSign({ on: e.target.checked })} /></label>
+    </div>
+    <div className="prop signopt" hidden={!s.on}><span></span><span className="unit">
+      <Seg value={s.size} options={[['s', '小'], ['m', '中'], ['l', '大']]} onChange={size => setSign({ size })} />
+      <Seg value={s.color} options={[['auto', '自動'], ['#ffffff', '白'], ['#000000', '黒']]} onChange={color => setSign({ color })} />
+    </span></div>
+  </>;
 }
