@@ -39,7 +39,6 @@ button, select, input { font: inherit; color: inherit; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn:disabled { opacity: .5; cursor: default; }
-.bar select { height: 27px; border: 1px solid var(--line); background: var(--field); border-radius: 6px; padding: 0 6px; max-width: 170px; }
 
 .panel { background: var(--panel); min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .layers { border-left: 1px solid var(--line); }
@@ -244,6 +243,7 @@ button, select, input { font: inherit; color: inherit; }
   .app.folded .layers > .ph { border-bottom: 0; }
   .bar { height: auto; flex-wrap: wrap; padding-block: 8px; row-gap: 8px; }
   .tabs { order: 3; flex-basis: 100%; height: 32px; }
+  .tabs:empty { display: none; }
   .insp { grid-template-columns: minmax(0, 1fr); }
   .insp .sec { border-right: 0; }
   .insp .sec > .prop.pair.nl > span:first-child { display: none; }
