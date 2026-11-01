@@ -1,7 +1,7 @@
 // Offline cache: pages network-first, everything else cache-first (built assets are content-hashed).
 // Every built file is cached at install, so a page that stays open across a deploy can still load its
 // lazy chunks after the server has replaced them. Files of the current and the previous build are kept.
-const CACHE = 'butcher-v1';
+const CACHE = 'butcher-v2';
 const ASSETS = []; // filled in by the build (vite.config.ts)
 const LIST = './__assets.json';
 
