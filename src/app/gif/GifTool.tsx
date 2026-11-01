@@ -592,8 +592,8 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
             <canvas id="gThumbs" ref={thumbs} />
             <div className="dim" id="gDimL" style={s.dur ? { left: '0', width: p(s.start) } : undefined} />
             <div className="dim" id="gDimR" style={s.dur ? { left: p(s.end), right: '0' } : undefined} />
-            <div className="rng" id="gRng" style={s.dur ? { left: p(s.start), width: p(s.end - s.start) } : undefined} />
-            <div className="ph2" id="gHead" style={s.dur ? { left: p(scrubT.current ?? v.currentTime) } : undefined} />
+            <div className="rng" id="gRng" hidden={!s.dur} style={s.dur ? { left: p(s.start), width: p(s.end - s.start) } : undefined} />
+            <div className="ph2" id="gHead" hidden={!s.dur} style={s.dur ? { left: p(scrubT.current ?? v.currentTime) } : undefined} />
           </div>
           <span className="num" id="gTime">{s.dur ? `${s.dur.toFixed(2)}s` : ''}</span>
         </div>
