@@ -4,7 +4,7 @@ export interface Rect { x: number; y: number; w: number; h: number }
 
 // background = transparency when the border is mostly transparent, otherwise the most common opaque color
 // (paper usually dominates; the border alone can be all frame line when the image is cropped tight)
-function background(px: Uint8ClampedArray, W: number, H: number): number | null {
+export function background(px: Uint8ClampedArray, W: number, H: number): number | null {
   let clear = 0, n = 0;
   const a = (x: number, y: number) => { n++; if (px[(y * W + x) * 4 + 3] < 128) clear++; };
   for (let x = 0; x < W; x++) { a(x, 0); a(x, H - 1); }
@@ -20,7 +20,7 @@ function background(px: Uint8ClampedArray, W: number, H: number): number | null 
 }
 
 // 1 = ink (differs from the background), 0 = background
-function inkMask(px: Uint8ClampedArray, W: number, H: number): Uint8Array {
+export function inkMask(px: Uint8ClampedArray, W: number, H: number): Uint8Array {
   const m = new Uint8Array(W * H), bg = background(px, W, H), T = 40;
   const br = bg === null ? 0 : bg >> 16 & 255, bgc = bg === null ? 0 : bg >> 8 & 255, bb = bg === null ? 0 : bg & 255;
   for (let p = 0, i = 0; p < m.length; p++, i += 4) {
@@ -32,8 +32,8 @@ function inkMask(px: Uint8ClampedArray, W: number, H: number): Uint8Array {
   return m;
 }
 
-// bounding boxes of 8-connected ink components (union-find over runs would be faster; per-pixel is fine at comic sizes)
-function components(m: Uint8Array, W: number, H: number): Rect[] {
+// 8-connected ink components: label per pixel (0 = background) and the count of labels
+function labels(m: Uint8Array, W: number, H: number): { lab: Int32Array; n: number } {
   const lab = new Int32Array(W * H), par: number[] = [0];
   const find = (a: number) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; };
   const uni = (a: number, b: number) => { a = find(a); b = find(b); if (a !== b) par[Math.max(a, b)] = Math.min(a, b); };
@@ -46,13 +46,28 @@ function components(m: Uint8Array, W: number, H: number): Rect[] {
     if (!l) { l = par.length; par.push(l); }
     lab[p] = l;
   }
-  const box = new Map<number, [number, number, number, number]>();
+  const id = new Int32Array(par.length); let n = 0;
+  for (let i = 1; i < par.length; i++) { const r = find(i); id[i] = r === i ? ++n : id[r]; }
+  for (let p = 0; p < lab.length; p++) if (lab[p]) lab[p] = id[lab[p]];
+  return { lab, n };
+}
+
+// bounding boxes of 8-connected ink components (keyed by label, 1-based); `src` limits which pixels count
+function boxes(lab: Int32Array, n: number, W: number, H: number, src?: (p: number) => boolean): (Rect | null)[] {
+  const b = new Int32Array((n + 1) * 4).fill(-1);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const v = lab[y * W + x]; if (!v) continue;
-    const r = find(v), b = box.get(r);
-    if (!b) box.set(r, [x, y, x, y]); else { if (x < b[0]) b[0] = x; if (x > b[2]) b[2] = x; if (y < b[1]) b[1] = y; if (y > b[3]) b[3] = y; }
+    const p = y * W + x, v = lab[p]; if (!v || (src && !src(p))) continue;
+    const i = v * 4;
+    if (b[i] < 0) { b[i] = b[i + 2] = x; b[i + 1] = b[i + 3] = y; continue; }
+    if (x < b[i]) b[i] = x; if (x > b[i + 2]) b[i + 2] = x; if (y < b[i + 1]) b[i + 1] = y; if (y > b[i + 3]) b[i + 3] = y;
   }
-  return [...box.values()].map(([x0, y0, x1, y1]) => ({ x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 }));
+  const out: (Rect | null)[] = [];
+  for (let v = 1; v <= n; v++) { const i = v * 4; out.push(b[i] < 0 ? null : { x: b[i], y: b[i + 1], w: b[i + 2] - b[i] + 1, h: b[i + 3] - b[i + 1] + 1 }); }
+  return out;
+}
+function components(m: Uint8Array, W: number, H: number): Rect[] {
+  const { lab, n } = labels(m, W, H);
+  return boxes(lab, n, W, H).filter((r): r is Rect => !!r);
 }
 
 // share of positions along each side of r that have ink within `d` px inside the edge
@@ -116,8 +131,8 @@ function order(rs: Rect[]): Rect[] {
   return rows.flatMap(w => w.sort((a, b) => b.x - a.x));
 }
 
-export function detectPanels(px: Uint8ClampedArray, W: number, H: number): Rect[] {
-  const m = inkMask(px, W, H), min = Math.max(16, Math.round(Math.min(W, H) * 0.08));
+function panelsOf(m: Uint8Array, W: number, H: number): Rect[] {
+  const min = Math.max(16, Math.round(Math.min(W, H) * 0.08));
   const found: Rect[] = [];
   for (const r of components(m, W, H)) {
     if (r.w < min || r.h < min || r.w * r.h < W * H * 0.01) continue;
@@ -126,4 +141,67 @@ export function detectPanels(px: Uint8ClampedArray, W: number, H: number): Rect[
   }
   const panels = found.filter(r => r.w >= min && r.h >= min && !(r.w >= W && r.h >= H));
   return order(panels.filter(r => !panels.some(b => inside(r, b))));
+}
+export function detectPanels(px: Uint8ClampedArray, W: number, H: number): Rect[] {
+  return panelsOf(inkMask(px, W, H), W, H);
+}
+
+// box dilation by r (separable running max)
+function dilate(m: Uint8Array, W: number, H: number, r: number): Uint8Array {
+  const a = new Uint8Array(W * H), b = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) { let last = -1e9; const o = y * W;
+    for (let x = 0; x < W; x++) if (m[o + x]) last = x; else if (x - last <= r) a[o + x] = 1;
+    last = 1e9; for (let x = W - 1; x >= 0; x--) { if (m[o + x]) { last = x; a[o + x] = 1; } else if (last - x <= r) a[o + x] = 1; } }
+  for (let x = 0; x < W; x++) { let last = -1e9;
+    for (let y = 0; y < H; y++) if (a[y * W + x]) { last = y; b[y * W + x] = 1; } else if (y - last <= r) b[y * W + x] = 1;
+    last = 1e9; for (let y = H - 1; y >= 0; y--) if (a[y * W + x]) last = y; else if (last - y <= r) b[y * W + x] = 1; }
+  return b;
+}
+
+// Separate drawings on a sheet (e.g. hand-drawn stickers scanned on white paper): ink close together
+// (within ~0.4% of the short side) and small marks inside another drawing's bounds count as one drawing.
+// Small marks (text, dust) and frames are left out. Rects are padded by the gap and kept inside the image.
+function drawingsOf(m: Uint8Array, W: number, H: number): Rect[] {
+  const S = Math.min(W, H), g = Math.max(2, Math.round(S * 0.01)), f = Math.max(1, Math.ceil(Math.sqrt(W * H / 4e6)));
+  const w = Math.ceil(W / f), h = Math.ceil(H / f), sm = new Uint8Array(w * h);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) sm[((y / f) | 0) * w + ((x / f) | 0)] = 1;
+  // groups of ink close together, measured on the original (undilated) ink of each group
+  const { lab, n } = labels(dilate(sm, w, h, Math.max(1, Math.round(S * 0.002 / f))), w, h);
+  const coarse = boxes(lab, n, w, h, p => !!sm[p]);
+  let rs: Rect[] = [];
+  for (let v = 1; v <= n; v++) {
+    const q = coarse[v - 1]; if (!q) continue;
+    // tighten to the real ink at full resolution
+    const X0 = q.x * f, Y0 = q.y * f, X1 = Math.min(W, (q.x + q.w) * f), Y1 = Math.min(H, (q.y + q.h) * f);
+    let x0 = W, y0 = H, x1 = -1, y1 = -1, ink = 0;
+    for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) if (m[y * W + x] && lab[((y / f) | 0) * w + ((x / f) | 0)] === v) {
+      ink++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    // thin guide frames and rulers are mostly empty
+    if (x1 >= 0 && ink >= (x1 - x0 + 1) * (y1 - y0 + 1) * 0.015) rs.push({ x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+  }
+  // small marks inside a drawing (eyes inside an outline) belong to it
+  rs = rs.filter(r => !rs.some(b => inside(r, b) && r.w * r.h < b.w * b.h * 0.2));
+  const min = Math.max(8, Math.round(S * 0.03));
+  rs = rs.filter(r => Math.min(r.w, r.h) >= min && !(r.w >= W * 0.9 && r.h >= H * 0.9) && !framed(m, W, r));
+  const pad = (r: Rect): Rect => { const x = Math.max(0, r.x - g), y = Math.max(0, r.y - g); return { x, y, w: Math.min(W, r.x + r.w + g) - x, h: Math.min(H, r.y + r.h + g) - y }; };
+  // rows top to bottom, left to right
+  const rows: Rect[][] = [];
+  for (const r of [...rs].sort((a, b) => a.y - b.y)) { const row = rows.find(w => overlapY(w[0], r)); if (row) row.push(r); else rows.push([r]); }
+  return rows.flatMap(row => row.sort((a, b) => a.x - b.x)).map(pad);
+}
+export function detectDrawings(px: Uint8ClampedArray, W: number, H: number): Rect[] {
+  return drawingsOf(inkMask(px, W, H), W, H);
+}
+
+// Auto slices: comic panels when the frames hold most of the ink, otherwise one slice per drawing
+// (a sheet of drawings around a guide frame finds the guide as a "panel", but most ink lies outside it).
+export function detectSlices(px: Uint8ClampedArray, W: number, H: number): Rect[] {
+  const m = inkMask(px, W, H), panels = panelsOf(m, W, H);
+  let ink = 0, inP = 0;
+  for (let p = 0; p < m.length; p++) ink += m[p];
+  for (const r of panels) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) inP += m[y * W + x];
+  if (panels.length && inP >= ink * 0.6) return panels;
+  const dr = drawingsOf(m, W, H);
+  return dr.length ? dr : panels;
 }

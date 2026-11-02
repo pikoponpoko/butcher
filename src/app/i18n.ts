@@ -51,11 +51,11 @@ const EN: Record<string, string> = {
   '指定': 'Custom', 'SNS': 'Social', '壁紙': 'Device', '基準の辺': 'Side', '幅': 'Width', '高さ': 'Height', 'ピクセル': 'Pixels', '基準': 'Basis', 'キャンバス': 'Canvas',
   '画像ごと': 'Per image', '合わせ方': 'Fit', '余白': 'Pad', '切り抜き': 'Crop', '余白カット': 'Trim', '接頭辞': 'Prefix', '接尾辞': 'Suffix',
   '署名': 'Signature', '署名を入れる': 'Add signature', '小': 'S', '中': 'M', '大': 'L', '白': 'White', '黒': 'Black',
-  '非表示レイヤーを含む': 'Include hidden layers', 'フォルダ階層を保持': 'Keep folder structure', '透明部分を周囲の色で補完': 'Fill transparent areas with edge color',
+  '非表示レイヤーを含む': 'Include hidden layers', 'フォルダ階層を保持': 'Keep folder structure', '透明部分を周囲の色で補完': 'Fill transparent areas with edge color', '隣の絵を消す': 'Remove neighboring drawings',
   '開いているファイルをすべて処理': 'Process all open files', '{n} ファイル': '{n} files', '警告あり {n}': '{n} with warnings', '警告のある画像も書き出す': 'Export images with warnings',
   '個別': 'Separate', 'フォルダ|out': 'Folder', '書き出し': 'Export', '標準': 'Standard', '13インチ': '13-inch', '11インチ': '11-inch',
   // image status
-  '{f}: 読み込めません（{e}）': '{f}: can’t open ({e})', '枠が見つかりません': 'No frames found', '{n} 件のスライスを追加': '{n} slices added', 'スライスがありません': 'No slices',
+  '{f}: 読み込めません（{e}）': '{f}: can’t open ({e})', '枠や絵が見つかりません': 'No frames or drawings found', '{n} 件のスライスを追加': '{n} slices added', 'スライスがありません': 'No slices',
   'スライス設定を保存': 'Slices saved', 'キャンバスサイズが異なります（{w}×{h}）': 'Canvas size differs ({w}×{h})', '{n} 件のスライスを読込': '{n} slices loaded',
   'スライス設定を読み込めません': 'Can’t load slices', 'サイズを選んでください': 'Choose a size', '空の画像です': 'The image is empty', '{n} ファイルを書き出し': '{n} files exported',
   '保存を取り消しました': 'Save canceled', '保存できませんでした': 'Couldn’t save', 'この環境ではフォルダに保存できません': 'Can’t save to a folder here',
