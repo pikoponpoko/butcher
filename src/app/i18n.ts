@@ -45,7 +45,7 @@ const EN: Record<string, string> = {
   '丸く切り抜いたときの見え方': 'Preview as a circle', '削除': 'Delete',
   // stage
   '：': ': ', '（{d}）': ' ({d})',
-  'ここにドロップ': 'Drop here', '空': 'Empty', '警告 {n}': '{n} warnings', '警告なし': 'No warnings',
+  'ここにドロップ': 'Drop here', '空': 'Empty', '警告 {n}': '{n} warnings',
   // inspector
   '書き出し設定': 'Export settings', '方式': 'Mode', 'フォルダ': 'Folders', '両方': 'Both', '形式': 'Format', '画質': 'Quality', 'サイズ': 'Size', '原寸': 'Full',
   '指定': 'Custom', 'SNS': 'Social', '壁紙': 'Device', '基準の辺': 'Side', '幅': 'Width', '高さ': 'Height', 'ピクセル': 'Pixels', '基準': 'Basis', 'キャンバス': 'Canvas',

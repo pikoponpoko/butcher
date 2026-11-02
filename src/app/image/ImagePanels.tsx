@@ -414,8 +414,8 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
       </div>
       <div className="status">
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
-        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) + `  ${pv.ms}ms` : ''}</span>
-        <span id="pvState">{pv && (ws.length ? <span className="warn">{tr('警告 {n}', { n: ws.length })}</span> : <span className="ok">{tr('警告なし')}</span>)}</span>
+        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) : ''}</span>
+        <span id="pvState">{pv && ws.length > 0 && <span className="warn">{tr('警告 {n}', { n: ws.length })}</span>}</span>
         <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}><Lbl>{tr('保存')}</Lbl></button>
       </div>
     </main>
