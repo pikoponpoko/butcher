@@ -43,7 +43,7 @@ function LayerTree({ t }: { t: ImageTool }) {
       const thumbStyle: CSSProperties | undefined = u ? { backgroundImage: `url(${u}), ${CHK}`, backgroundSize: 'contain, 6px 6px', backgroundRepeat: 'no-repeat, repeat', backgroundPosition: 'center, 0 0' } : undefined;
       const bm = n.blendMode, w = PsdCore.collectWarnings(n).filter(x => x !== 'text');
       rows.push(
-        <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ paddingLeft: 8 + depth * 14 + 'px' }}
+        <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ '--ind': Math.min(depth, 3) * 12 + 'px' } as CSSProperties}
           onClick={() => t.setSel(t.sel === n ? null : n)}>
           <button className="eye" aria-label={tr(n.hidden ? '表示' : '非表示')} aria-pressed={!n.hidden}
             onClick={e => { e.stopPropagation(); t.edit(() => { n.hidden = !n.hidden; }); }}>{n.hidden ? ICON.eyeOff : ICON.eye}</button>
@@ -388,7 +388,7 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
   const sc = slicing ? curSlice(d) : null;
   return (
     <main className="center">
-      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '') + (d ? '' : ' pick')} id="stage" ref={stageRef} onClick={d ? undefined : onPick} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '') + (d ? '' : ' pick')} id="stage" ref={stageRef} onClick={d ? undefined : onPick} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}`, '--sw': x1 - x0, '--sh': y1 - y0 } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <div className="cv" style={cvStyle}>
           <canvas id="pv" ref={pvRef} width="1" height="1" hidden={!pv} style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">

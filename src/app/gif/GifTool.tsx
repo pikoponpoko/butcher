@@ -571,9 +571,9 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   const fieldBlur = () => bump();
 
   return (
-    <section className="gif" id="gif">
+    <section className={'gif' + (s.v ? ' on' : '')} id="gif">
       <main className="center" style={{ display: 'flex' }}>
-        <div className={'stage' + (s.v ? cr && show === 'pv' ? ' crop' : '' : ' pick')} id="gStage" ref={stageRef} onClick={s.v ? undefined : onPick} onPointerDown={cDown} onPointerMove={cMove} onPointerUp={cUp} onPointerCancel={cUp}>
+        <div className={'stage' + (s.v ? cr && show === 'pv' ? ' crop' : '' : ' pick')} id="gStage" ref={stageRef} style={s.v ? { '--sw': s.sw, '--sh': s.sh } as CSSProperties : undefined} onClick={s.v ? undefined : onPick} onPointerDown={cDown} onPointerMove={cMove} onPointerUp={cUp} onPointerCancel={cUp}>
           <div className="cv" hidden={show !== 'pv' || !s.v}>
             <canvas id="gPv" ref={pv} width="1" height="1" style={crop ? cbox : box} />
             {cr && <div className="sl on" id="gCrop">
@@ -587,7 +587,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
           <AddHint id="gEmpty" hidden={s.v} />
         </div>
         <div className="tl">
-          <button className="play" id="gPlay" aria-label={tr(v.paused ? '再生' : '停止')} onClick={() => setPlaying(v.paused)}>{playIcon}</button>
+          <button className="play" id="gPlay" disabled={!s.v} aria-label={tr(v.paused ? '再生' : '停止')} onClick={() => setPlaying(v.paused)}>{playIcon}</button>
           <div className="track" id="gTrack" ref={track} onPointerDown={trackDown} onPointerMove={trackMove} onPointerUp={trackUp} onPointerCancel={trackUp}>
             <canvas id="gThumbs" ref={thumbs} />
             <div className="dim" id="gDimL" style={s.dur ? { left: '0', width: p(s.start) } : undefined} />
@@ -613,20 +613,20 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
               hiddenValues={u === 'web' ? ['mp4'] : u === 'sns' ? ['webp'] : u === 'wp' ? ['gif', 'webp'] : []} onChange={setFmt} /></div>
             <div className="prop use" id="gRatioRow" hidden={sets}><Seg id="gRatio" value={s.ratio} options={RATIOS.map(([r, l]) => [r, tr(l)])} onChange={setRatio} /></div>
           </div>
-          <div className="sec">
+          <div className="sec wh">
             {sets && SERVICES[u].filter(([svc]) => !(s.fmt === 'gif' && svc === 'ig')).map(([svc, label]) => (
               <div key={svc} className="prop ps"><span>{label}</span>
                 <Toggles id={'gPs-' + svc} values={s.picks} options={VIDEO_PRESETS.filter(x => x.svc === svc && (s.fmt !== 'gif' || X_GIF[x.id])).map(x => [x.id, tr(x.label)])} onToggle={id => { s.picks = toggleId(s.picks, id); presetPreview(); changed(); }} /></div>
             ))}
-            <div className="prop pair" hidden={sets}><span><Lbl>{tr('幅')}</Lbl></span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
+            <div className="prop pair top" hidden={sets}><span><Lbl>{tr('幅')}</Lbl></span><span className="unit"><DraftInput id="gW" className="n" type="number" min="16" max="4096" value={s.w} onBlur={fieldBlur}
               onDraft={num('w', val => { const w = Math.max(1, Math.min(4096, Math.round(val))); s.w = w; lockFromW(); return w; })} />px</span></div>
-            <div className="prop pair" hidden={sets}><span><Lbl>{tr('高さ')}</Lbl></span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
+            <div className="prop pair top" hidden={sets}><span><Lbl>{tr('高さ')}</Lbl></span><span className="unit"><DraftInput id="gH" className="n" type="number" min="16" max="4096" value={s.h} onBlur={fieldBlur}
               onDraft={num('h', val => { const h = Math.max(1, Math.min(4096, Math.round(val))); const r = ratio(); if (r) s.w = Math.max(1, Math.round(h * r)); return h; })} />px</span></div>
             <div className="prop pair" id="gFitRow" hidden={fitHidden}><span><Lbl>{tr('合わせ方')}</Lbl></span><Seg id="gFit" value={s.fit} options={[['cover', tr('切り抜き')], ['contain', tr('余白')]]} onChange={f => { s.fit = f; changed(); }} /></div>
             <div className="prop pair" id="gBgRow" hidden={bgHidden}><span><Lbl>{tr('背景')}</Lbl></span><Seg id="gBg" value={s.bg} options={[['transparent', tr('透明')], ['#000000', tr('黒')], ['#ffffff', tr('白')]]} hiddenValues={s.fmt === 'mp4' ? ['transparent'] : []} onChange={b => { s.bg = b; changed(); }} /></div>
           </div>
           <div className="sec">
-            <div className="prop"><span><Lbl>{tr('範囲')}</Lbl></span><span className="unit">
+            <div className="prop top"><span><Lbl>{tr('範囲')}</Lbl></span><span className="unit">
               <DraftInput id="gStart" className="n" type="number" min="0" step="0.01" aria-label={tr('開始')} value={s.start.toFixed(2)} onBlur={() => { fieldBlur(); seek(s.start); }}
                 onDraft={num('start', val => Math.max(0, Math.min(val, s.end - 0.01)))} />–<DraftInput id="gEnd" className="n" type="number" min="0" step="0.01" aria-label={tr('終了')} value={s.end.toFixed(2)} onBlur={() => { fieldBlur(); seek(s.end); }}
                 onDraft={num('end', val => Math.min(s.dur, Math.max(val, s.start + 0.01)))} />{tr('秒')}</span></div>
@@ -639,7 +639,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
             <SignRows />
           </div>
           <div className="sec">
-            <div className="prop pair"><span><Lbl>{tr('目標サイズ')}</Lbl></span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder={tr('なし')} value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
+            <div className="prop pair top"><span><Lbl>{tr('目標サイズ')}</Lbl></span><span className="unit"><DraftInput id="gTarget" className="n" type="number" min="0" step="0.1" placeholder={tr('なし')} value={s.target || ''} onBlur={fieldBlur} onDraft={num('target', val => Math.max(0, val))} />MB</span></div>
             <div className="prop pair" id="gDotRow"><span><Lbl>{tr('ドット')}</Lbl></span><span className="unit"><Pick id="gDot" label={tr('ドットの大きさ')} value={dotOn() ? s.dot : 0} options={dotSizes(s.dot).map(d => [d, d ? d + 'px' : tr('なし'), d || tr('なし')])} onChange={d => { s.dot = d; changed(); }} />
               <select id="gColors" aria-label={tr('色数')} value={String(s.colors)} hidden={s.fmt !== 'gif' && !dotOn()} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16', '8', '4'].map(x => <option key={x} value={x}>{tr('{n}色', { n: x })}</option>)}{altOptions([['{n}色', { n: 256 }]])}</select></span></div>
             <label className="prop pair" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span><Lbl>{tr('画質')}</Lbl></span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>

@@ -52,6 +52,14 @@ export function App() {
     const ro = new ResizeObserver(() => app.style.setProperty('--bar-h', bar.getBoundingClientRect().height + 'px'));
     ro.observe(bar); return () => ro.disconnect();
   }, []);
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    // phones: hide the bottom export bar while the keyboard is up
+    const text = (e: Event) => { const el = e.target as HTMLElement; return el.tagName === 'INPUT' && !['checkbox', 'file', 'radio'].includes((el as HTMLInputElement).type); };
+    const on = (e: FocusEvent) => { if (text(e)) setTyping(true); }, off = (e: FocusEvent) => { if (text(e)) setTyping(false); };
+    addEventListener('focusin', on); addEventListener('focusout', off);
+    return () => { removeEventListener('focusin', on); removeEventListener('focusout', off); };
+  }, []);
   const openAny = (files: File[]) => {
     const vid = files.find(isVideo);
     if (vid) { live.current.setTool('gif'); gif.current?.open(vid); return; }
@@ -75,7 +83,7 @@ export function App() {
   const [gifSt, setGifSt] = useState({ open: false, ready: false });
 
   return (
-    <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '')}>
+    <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
       <header className="bar">
         <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')]]} onChange={setTool} />
         <div className="tabs img-only" id="tabs" role="tablist">
