@@ -4,6 +4,7 @@ import type { SqlJsStatic } from 'sql.js';
 import * as PsdCore from '../../core/psdcore';
 import type { PsdDoc, PsdNode } from '../../core/psdcore';
 import { readClip } from '../../core/clipreader';
+import { compositeBytes, memBudget } from '../memory';
 
 // Layer nodes carry UI-only fields next to the parsed data.
 export interface Node extends PsdNode { children?: Node[]; _id: number; _parent: Node | null; _rename?: string; _thumb?: string | null }
@@ -31,14 +32,29 @@ function ensureSQL() {
 }
 const IMG_RE = /\.(png|jpe?g|webp|gif|bmp)$/i;
 export const SRC_RE = /\.(psd|psb|clip|png|jpe?g|webp|gif|bmp)$/i;
-export async function openFile(name: string, buf: ArrayBuffer): Promise<Doc> {
-  if (/\.clip$/i.test(name)) return makeDoc(name, await readClip(buf, await ensureSQL()));
+// Thrown before a file is decoded (PSD, images) or composited (CLIP) when it likely needs more memory than the device has.
+export class TooLarge extends Error {
+  constructor(public W: number, public H: number, public need: number) { super('too large'); }
+}
+function checkSize(W: number, H: number, force: boolean) {
+  const need = compositeBytes(W, H, 2);
+  if (!force && need > memBudget()) throw new TooLarge(W, H, need);
+}
+export async function openFile(name: string, buf: ArrayBuffer, force = false): Promise<Doc> {
+  if (/\.clip$/i.test(name)) { const psd = await readClip(buf, await ensureSQL()); checkSize(psd.width, psd.height, force); return makeDoc(name, psd); }
   if (IMG_RE.test(name)) {
-    const bmp = await createImageBitmap(new Blob([buf])), c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
-    const ctx = c.getContext('2d')!; ctx.drawImage(bmp, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height);
-    const d = makeDoc(name, { width: c.width, height: c.height, children: [], imageData: { width: c.width, height: c.height, data: img.data } });
-    d.isImage = true; return d;
+    const bmp = await createImageBitmap(new Blob([buf]));
+    try {
+      checkSize(bmp.width, bmp.height, force);
+      const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+      const ctx = c.getContext('2d')!; ctx.drawImage(bmp, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height);
+      c.width = c.height = 0;
+      const d = makeDoc(name, { width: img.width, height: img.height, children: [], imageData: { width: img.width, height: img.height, data: img.data } });
+      d.isImage = true; return d;
+    } finally { bmp.close(); }
   }
+  // PSD / PSB header: height and width at bytes 14 and 18 (big-endian), read before the layers are decoded
+  if (buf.byteLength >= 26) { const v = new DataView(buf); checkSize(v.getUint32(18), v.getUint32(14), force); }
   return makeDoc(name, readPsd(buf, { useImageData: true }) as PsdDoc);
 }
 function makeDoc(name: string, psd: PsdDoc): Doc {
@@ -51,6 +67,21 @@ export const nameOf = (n: Node) => n._rename ?? n.name ?? '';
 export const pathOf = (n: Node) => { const p: string[] = []; for (let q = n._parent; q; q = q._parent) p.unshift(nameOf(q)); return p; };
 export const stem = (n: string) => n.replace(/\.(psd|psb|clip|png|jpe?g|webp|gif|bmp)$/i, '');
 export const safe = (s: string) => (s || '_').replace(/[\\/:*?"<>|]/g, '_');
+// Output paths stay unique after sanitizing ("a:b" and "a?b" both become "a_b"), across folders and open files.
+// A clash gets _2, _3 … on the file stem, checked against every file the target writes (its tails: ".png", "-180.png" …).
+// Names are compared case-insensitively, as Windows and macOS file systems do; `flat` = folders become "_" (個別 / share).
+export function makeNamer(flat: boolean) {
+  const used = new Set<string>(), key = (p: string) => (flat ? p.replace(/\//g, '_') : p).toLowerCase();
+  return {
+    reserve(p: string) { used.add(key(p)); },
+    take(stem: string, tails: string[]) {
+      for (let k = 1; ; k++) {
+        const s = k === 1 ? stem : `${stem}_${k}`, ks = tails.map(t => key(s + t));
+        if (ks.every(x => !used.has(x)) && new Set(ks).size === ks.length) { ks.forEach(x => used.add(x)); return s; }
+      }
+    },
+  };
+}
 export function dedupe(ws: PsdCore.Warning[]) { const s = new Set<string>(); return ws.filter(w => { const k = w.path + w.type; if (s.has(k)) return false; s.add(k); return true; }); }
 
 export function thumbOf(n: Node) {
