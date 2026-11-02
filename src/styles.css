@@ -5,7 +5,6 @@
   --chk-a: #2A2E34; --chk-b: #33383F;
   --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238A939E' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --sans: "IBM Plex Sans JP", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
@@ -21,7 +20,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-s
 [hidden] { display: none !important; }
 button, select, input { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; }
+.num, input.n { font-variant-numeric: tabular-nums; }
 .warn { color: var(--warn); } .muted { color: var(--muted); } .ok { color: var(--ok); } .err { color: var(--danger); }
 
 .app { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) 260px 288px; grid-template-rows: 44px minmax(0, 1fr);
@@ -106,7 +105,7 @@ button, select, input { font: inherit; color: inherit; }
 .sprops .g { display: grid; grid-template-columns: 16px 1fr 16px 1fr; gap: 6px 8px; align-items: center; }
 .sprops .g span { color: var(--muted); }
 .sprops input { height: 24px; min-width: 0; background: var(--field); border: 1px solid var(--line); border-radius: 2px; padding: 0 6px; box-sizing: border-box; color: var(--fg); }
-.sprops input.n { font-family: var(--mono); font-size: 11px; text-align: right; }
+.sprops input.n { text-align: right; }
 .sprops input:focus { border-color: var(--accent); outline: none; }
 .sprops .r { display: flex; align-items: center; gap: 8px; }
 .sprops .r input { flex: 1; min-width: 0; }
@@ -133,7 +132,7 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .prop.sw input { grid-column: 2; justify-self: start; }
 .unit { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .prop input.n, .prop input.t, .prop select { height: 24px; background: var(--field); border: 1px solid var(--line); border-radius: 2px; padding: 0 6px; box-sizing: border-box; color: var(--fg); }
-.prop input.n { width: 64px; font-family: var(--mono); font-size: 11px; text-align: right; }
+.prop input.n { width: 64px; text-align: right; }
 .prop input.t { width: 160px; }
 .prop select, .unit select { appearance: none; background-image: var(--chev); background-repeat: no-repeat; background-position: right 7px center; padding-right: 24px; line-height: 1; }
 input[type="number"] { -moz-appearance: textfield; } input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
