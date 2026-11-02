@@ -18,7 +18,9 @@
   --accent: #2F6FEB; --on-accent: #FFFFFF; --warn: #A55E00; --danger: #C9323A; --ok: #1F8A4C;
   --chk-a: #FFFFFF; --chk-b: #DCE0E5; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235D6773' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); color-scheme: light }
 :root {
-  --hover: color-mix(in srgb, var(--fg) 6%, var(--field));
+  /* controls are filled wells on the panel, no outlines */
+  --well: color-mix(in srgb, var(--fg) 7%, var(--panel));
+  --hover: color-mix(in srgb, var(--fg) 11%, var(--panel));
   --selected: color-mix(in srgb, var(--accent) 16%, var(--panel));
   --pressed: color-mix(in srgb, var(--accent) 24%, var(--panel));
   --primary-hover: color-mix(in srgb, var(--accent) 90%, var(--fg));
@@ -62,11 +64,11 @@ button, select, input { font: inherit; color: inherit; margin: 0; }
 button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: start; }
 
 /* ---------- controls */
-.btn { height: var(--control-h); min-width: 49px; padding: 0 12px; border: 1px solid var(--control-border); border-radius: 3px; background: var(--field);
+.btn { height: var(--control-h); min-width: 49px; padding: 0 12px; border: 1px solid transparent; border-radius: 3px; background: var(--well);
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; cursor: pointer; font-weight: 500; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn:active { background: var(--pressed); } .btn.primary:active { background: var(--primary-pressed); border-color: var(--primary-pressed); }
-.btn:disabled, .btn.primary:disabled { background: var(--panel); border-color: var(--line); color: var(--muted); cursor: default; }
+.btn:disabled, .btn.primary:disabled { background: var(--well); border-color: transparent; color: var(--muted); cursor: default; }
 
 .link { height: var(--control-h); min-width: var(--control-h); padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer; }
@@ -76,7 +78,7 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .link:disabled { color: var(--line); background: none; cursor: default; }
 
 .seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; justify-self: start; width: max-content; height: var(--control-h);
-  padding: 0; gap: 0; border: 1px solid var(--control-border); border-radius: 3px; background: var(--field); overflow: hidden; }
+  padding: 0; gap: 0; border: 0; border-radius: 3px; background: var(--well); overflow: hidden; }
 .seg button { height: 100%; padding: 0 10px; border: 0; border-radius: 0; background: transparent; color: var(--fg);
   display: inline-flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer; }
 /* selected: fill only, flush with the outer border (no inner gap, no outline) */
@@ -86,7 +88,7 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .seg button[aria-pressed="true"]:disabled { background: var(--panel); }
 
 input.n, input.t, select, .kv input, .sprops input, .pickb {
-  height: var(--control-h); min-width: 0; padding: 0 8px; border: 1px solid var(--control-border); border-radius: 2px; background: var(--field); color: var(--fg);
+  height: var(--control-h); min-width: 0; padding: 0 8px; border: 1px solid transparent; border-radius: 3px; background-color: var(--well); color: var(--fg);
   font-size: var(--text-input); line-height: 1; }
 input.n, .sprops input.n { text-align: right; }
 input:focus, select:focus { border-color: var(--accent); outline: none; }
@@ -98,7 +100,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 /* checkbox: 17/19px box inside a 31/45px hit area */
 .ck, .sw input { appearance: none; -webkit-appearance: none; flex: none; width: var(--control-h); height: var(--control-h); margin: 0; padding: 0; border: 0; background: none;
   display: grid; place-items: center; cursor: pointer; border-radius: 3px; }
-.ck::before, .sw input::before { content: ""; grid-area: 1 / 1; width: var(--check); height: var(--check); box-sizing: border-box; border: 1px solid var(--control-border); border-radius: 2px; background: var(--field); }
+.ck::before, .sw input::before { content: ""; grid-area: 1 / 1; width: var(--check); height: var(--check); box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--fg) 28%, var(--panel)); border-radius: 3px; background: var(--well); }
 .ck:checked::before, .sw input:checked::before { background: var(--accent); border-color: var(--accent); }
 .ck::after, .sw input::after { content: ""; grid-area: 1 / 1; width: calc(var(--check) * .45); height: calc(var(--check) * .25); border: solid var(--on-accent); border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); visibility: hidden; }
 .ck:checked::after, .sw input:checked::after { visibility: visible; }
@@ -109,7 +111,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
   .btn.primary:hover:not(:disabled):not(:active) { background: var(--primary-hover); border-color: var(--primary-hover); }
   .link:hover:not(:disabled):not(:active) { background: var(--hover); color: var(--fg); }
   .seg button:hover:not(:disabled):not([aria-pressed="true"]):not(:active) { background: var(--hover); }
-  input.n:hover:not(:focus), input.t:hover:not(:focus), select:hover:not(:focus), .sprops input:hover:not(:focus), .pickb:hover { border-color: var(--fg); }
+  input.n:hover:not(:focus), input.t:hover:not(:focus), select:hover:not(:focus), .sprops input:hover:not(:focus), .pickb:hover { background-color: var(--hover); }
   .ck:hover::before, .sw:hover input:not(:disabled)::before { border-color: var(--fg); }
   .ck:checked:hover::before, .sw:hover input:checked::before { border-color: var(--accent); }
 }
@@ -266,7 +268,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .pickb { min-width: 72px; display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; padding: 0 11px 0 8px; }
 .pickb svg { color: var(--muted); flex: none; }
 .pickb[aria-expanded="true"] { border-color: var(--accent); }
-.pickl { position: fixed; z-index: 20; display: grid; grid-template-columns: repeat(5, 41px); gap: 0; padding: 0; background: var(--field); border: 1px solid var(--control-border); border-radius: 3px; overflow: hidden; }
+.pickl { position: fixed; z-index: 20; display: grid; grid-template-columns: repeat(5, 41px); gap: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
 .pickl button { height: calc(var(--control-h) - 2px); padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); display: inline-flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer; white-space: nowrap; }
 .pickl button[aria-selected="true"] { background: var(--selected); font-weight: 600; }
 @media (hover: hover) and (pointer: fine) { .pickl button:hover:not([aria-selected="true"]) { background: var(--hover); } }
@@ -284,10 +286,10 @@ input::placeholder { color: var(--muted); opacity: 1; }
 /* timeline: play | frames | duration */
 .tl { flex: none; display: grid; grid-template-columns: 45px minmax(0, 1fr) 52px; align-items: center; gap: 8px;
   height: var(--tl-h); padding: 13px 12px 14px; border-top: 1px solid var(--line); background: var(--panel); }
-.tl .play { width: 45px; height: 45px; border: 1px solid var(--control-border); background: var(--field); border-radius: 3px; display: grid; place-items: center; cursor: pointer; color: var(--fg); padding: 0; }
-.tl .play:disabled { background: var(--panel); border-color: var(--line); color: var(--muted); cursor: default; }
-.track { position: relative; height: 45px; border: 1px solid var(--control-border); border-radius: 2px; overflow: hidden; background: var(--field); cursor: pointer; touch-action: pan-y; }
-.gif:not(.on) .track { background: var(--panel); border-color: var(--line); cursor: default; }
+.tl .play { width: 45px; height: 45px; border: 0; background: var(--well); border-radius: 3px; display: grid; place-items: center; cursor: pointer; color: var(--fg); padding: 0; }
+.tl .play:disabled { color: var(--muted); cursor: default; }
+.track { position: relative; height: 45px; border: 0; border-radius: 3px; overflow: hidden; background: var(--well); cursor: pointer; touch-action: pan-y; }
+.gif:not(.on) .track { cursor: default; }
 .track canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .track .dim { position: absolute; top: 0; bottom: 0; background: var(--bg); opacity: .7; pointer-events: none; }
 .track .rng { position: absolute; top: 0; bottom: 0; border: 2px solid var(--accent); border-left-width: 5px; border-right-width: 5px; pointer-events: none; }
@@ -377,7 +379,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
   /* ratio: seven separate buttons, four per row */
   #gRatio { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: row; gap: 4px; height: auto; padding: 0; border: 0; background: none; }
   #gRatio { overflow: visible; }
-  #gRatio button { height: 45px; border: 1px solid var(--control-border); background: var(--field); border-radius: 3px; }
+  #gRatio button { height: 45px; border: 0; background: var(--well); border-radius: 3px; }
   #gRatio button[aria-pressed="true"] { background: var(--selected); }
   /* width / height side by side, labels on top */
   .gif .sec.wh { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; }
