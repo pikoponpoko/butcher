@@ -158,6 +158,39 @@ function dilate(m: Uint8Array, W: number, H: number, r: number): Uint8Array {
   return b;
 }
 
+// A drawing struck out with an X: two long straight diagonal strokes that cross each other partway along both
+// (the two straight sides of a heart's point meet at their ends, so they don't count).
+export function crossedOut(m: Uint8Array, W: number, r: Rect): boolean {
+  const k = Math.max(1, Math.ceil(Math.max(r.w, r.h) / 160)), w = Math.ceil(r.w / k), h = Math.ceil(r.h / k);
+  const g = new Uint8Array(w * h);
+  for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) if (m[(r.y + y) * W + r.x + x]) g[((y / k) | 0) * w + ((x / k) | 0)] = 1;
+  const ink = (x: number, y: number) => {
+    const X = Math.round(x), Y = Math.round(y);
+    return X >= 0 && Y >= 0 && X < w && Y < h && !!g[Y * w + X];
+  };
+  const need = Math.min(w, h) * 0.7, cx = w / 2, cy = h / 2, R = Math.hypot(w, h) / 2;
+  type Seg = { x0: number; y0: number; x1: number; y1: number };
+  const runs: Seg[][] = [[], []];
+  for (let deg = 20; deg <= 70; deg += 2) for (const sg of [0, 1]) {
+    const a = deg * Math.PI / 180, dx = Math.cos(a), dy = sg ? -Math.sin(a) : Math.sin(a), nx = -dy, ny = dx;
+    for (let off = -R; off <= R; off += 1) {
+      let run = 0, gap = 0, start = -R, best = 0, bs = 0;
+      for (let t = -R; t <= R; t += 1) {
+        const x = cx + nx * off + dx * t, y = cy + ny * off + dy * t;
+        if (ink(x, y)) { if (!run) start = t; run = t - start + 1; gap = 0; if (run > best) { best = run; bs = start; } }
+        else if (run && ++gap > 2) { run = 0; gap = 0; }
+      }
+      if (best >= need) { const px = cx + nx * off, py = cy + ny * off; runs[sg].push({ x0: px + dx * bs, y0: py + dy * bs, x1: px + dx * (bs + best), y1: py + dy * (bs + best) }); }
+    }
+  }
+  for (const p of runs[0]) for (const q of runs[1]) {
+    const ax = p.x1 - p.x0, ay = p.y1 - p.y0, bx = q.x1 - q.x0, by = q.y1 - q.y0, den = ax * by - ay * bx; if (!den) continue;
+    const u = ((q.x0 - p.x0) * by - (q.y0 - p.y0) * bx) / den, v = ((q.x0 - p.x0) * ay - (q.y0 - p.y0) * ax) / den;
+    if (u > 0.3 && u < 0.7 && v > 0.3 && v < 0.7) return true;
+  }
+  return false;
+}
+
 // Separate drawings on a sheet (e.g. hand-drawn stickers scanned on white paper): ink close together
 // (within ~0.4% of the short side) and small marks inside another drawing's bounds count as one drawing.
 // Small marks (text, dust) and frames are left out. Rects are padded by the gap and kept inside the image.
@@ -188,7 +221,8 @@ function drawingsOf(m: Uint8Array, W: number, H: number): Rect[] {
   // rows top to bottom, left to right
   const rows: Rect[][] = [];
   for (const r of [...rs].sort((a, b) => a.y - b.y)) { const row = rows.find(w => overlapY(w[0], r)); if (row) row.push(r); else rows.push([r]); }
-  return rows.flatMap(row => row.sort((a, b) => a.x - b.x)).map(pad);
+  // drawings struck out with an X are left out
+  return rows.flatMap(row => row.sort((a, b) => a.x - b.x)).map(pad).filter(r => !crossedOut(m, W, r));
 }
 export function detectDrawings(px: Uint8ClampedArray, W: number, H: number): Rect[] {
   return drawingsOf(inkMask(px, W, H), W, H);

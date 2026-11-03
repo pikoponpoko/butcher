@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectDrawings, detectSlices } from '../src/app/image/panels';
+import { crossedOut, detectDrawings, detectSlices } from '../src/app/image/panels';
 import { isolateDrawing } from '../src/app/image/isolate';
 
 // white sheet with black rings ("drawings") that have dots inside ("eyes")
@@ -53,5 +53,24 @@ describe('isolateDrawing', () => {
     expect(out.clear).toBe(true);
     expect(out.px[(30 * W + 95) * 4 + 3]).toBe(0);
     expect(out.px[(30 * W + 40) * 4 + 3]).toBe(255);
+  });
+});
+
+describe('crossedOut', () => {
+  const W = 200, H = 200;
+  const mask = (draw: (put: (x: number, y: number) => void) => void) => {
+    const m = new Uint8Array(W * H);
+    draw((x, y) => { for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const a = Math.round(x) + i, b = Math.round(y) + j; if (a >= 0 && b >= 0 && a < W && b < H) m[b * W + a] = 1; } });
+    return m;
+  };
+  const ring = (put: (x: number, y: number) => void) => { for (let a = 0; a < 720; a++) put(100 + 80 * Math.cos(a * Math.PI / 360), 100 + 80 * Math.sin(a * Math.PI / 360)); };
+  const line = (put: (x: number, y: number) => void, x0: number, y0: number, x1: number, y1: number) => { for (let t = 0; t <= 1; t += 0.002) put(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t); };
+  const all = { x: 0, y: 0, w: W, h: H };
+  it('finds an X drawn over a drawing', () => {
+    expect(crossedOut(mask(p => { ring(p); line(p, 25, 25, 175, 175); line(p, 175, 25, 25, 175); }), W, all)).toBe(true);
+  });
+  it('ignores plain drawings and two strokes meeting at a point (the bottom of a heart)', () => {
+    expect(crossedOut(mask(ring), W, all)).toBe(false);
+    expect(crossedOut(mask(p => { line(p, 20, 30, 100, 180); line(p, 180, 30, 100, 180); }), W, all)).toBe(false);
   });
 });
