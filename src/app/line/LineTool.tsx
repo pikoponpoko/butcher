@@ -72,12 +72,11 @@ function paintOf(la: LineArt, ops: Op[]) {
   const base = (r: number) => !la.outside[r] !== flip.has(r);
   for (const o of ops) {
     if ('g' in o) {
-      // a sweep clears without toggling: a painted region loses its color, an unpainted one its base
+      // a sweep only takes the point color off; the base stays
       for (let i = 0; i + 1 < o.g.length; i += 2) {
         const r = at(o.g[i], o.g[i + 1]); if (r < 0) continue;
         if (o.c) point.set(r, { c: o.c, fx: o.fx });
-        else if (point.has(r)) point.delete(r);
-        else if (base(r)) flip.has(r) ? flip.delete(r) : flip.add(r);
+        else point.delete(r);
       }
       continue;
     }
@@ -337,7 +336,12 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   }
   function up(e: RPointerEvent) {
     const q = g.current; if (!pts.delete(e.pointerId) || !q) return;
-    if (pts.size) return;
+    if (pts.size) {
+      // a finger lifted mid-pinch: carry on from the current zoom (the rest pans / pinches from here)
+      const rest = [...pts.values()]; q.v0 = viewNow(); q.start = rest[0];
+      if (rest.length >= 2) { q.d0 = Math.max(1, Math.hypot(rest[0].x - rest[1].x, rest[0].y - rest[1].y)); q.m0 = local((rest[0].x + rest[1].x) / 2, (rest[0].y + rest[1].y) / 2); }
+      return;
+    }
     g.current = null;
     if (drag) {
       const d = drag; setDrag(null);
