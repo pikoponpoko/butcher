@@ -87,7 +87,12 @@ export function useImageTool() {
   // a document made elsewhere (the 線画 tool's layers)
   function addDoc(name: string, psd: Parameters<typeof makeDoc>[1]) {
     if (job.current) return;
-    docs.push(makeDoc(name, psd)); setCur(docs.length - 1); setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
+    // sent again: replaces the earlier copy and keeps its slices
+    const d = makeDoc(name, psd), i = docs.findIndex(x => x.fromLine && x.name === name);
+    d.fromLine = true;
+    if (i >= 0) { const o = docs[i]; if (o.psd.width === psd.width && o.psd.height === psd.height) { d.slices = o.slices; d.sliceSel = o.sliceSel; } docs[i] = d; setCur(i); }
+    else { docs.push(d); setCur(docs.length - 1); }
+    setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
   function closeDoc(i: number) {
