@@ -12,8 +12,42 @@ import type { Status } from '../image/exporter';
 
 export interface LineToolApi { open(f: File): void; export(): void }
 export interface LineState { open: boolean; busy: boolean }
-// a tap: paint the region under (x, y) with `c`, or erase it (null)
-type Op = { x: number; y: number; c: string | null };
+// history: a tap paints the region under (x, y) with `c` or erases it (null); `j` adds a join, `rm` takes one away
+// `b` is a brush stroke (points, radius `r`) that paints `c` or erases (null) pixel by pixel over the regions
+type Op = { x: number; y: number; c: string | null } | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null };
+const isTap = (o: Op): o is { x: number; y: number; c: string | null } => 'x' in o;
+// joins in effect after replaying the history
+function joinsOf(ops: Op[]) {
+  const on: number[][] = [];
+  for (const o of ops) if ('j' in o) on.push(o.j); else if ('rm' in o) { const i = on.indexOf(o.rm); if (i >= 0) on.splice(i, 1); }
+  return on;
+}
+// The traced path as a join: evenly resampled and smoothed (hand shake), stretched so its ends sit on the
+// snapped line ends, and near each snapped end bent to leave along that line's direction.
+// a / b: [x, y, dx, dy] of the line end (dx, dy pointing out of the line), or null when that end didn't snap.
+export function joinCurve(d: number[], a: number[] | null, b: number[] | null, n = 64) {
+  const m = d.length / 2, acc = [0];
+  for (let i = 1; i < m; i++) acc.push(acc[i - 1] + Math.hypot(d[i * 2] - d[i * 2 - 2], d[i * 2 + 1] - d[i * 2 - 1]));
+  const total = acc[m - 1] || 1, P: number[] = [];
+  for (let k = 0, i = 0; k <= n; k++) {
+    const at = total * k / n; while (i < m - 2 && acc[i + 1] < at) i++;
+    const f = acc[i + 1] > acc[i] ? (at - acc[i]) / (acc[i + 1] - acc[i]) : 0, j = Math.min(i + 1, m - 1);
+    P.push(d[i * 2] + (d[j * 2] - d[i * 2]) * f, d[i * 2 + 1] + (d[j * 2 + 1] - d[i * 2 + 1]) * f);
+  }
+  for (let pass = 0; pass < 6; pass++) for (let k = 1; k < n; k++) for (let c = 0; c < 2; c++) P[k * 2 + c] = (P[k * 2 - 2 + c] + 2 * P[k * 2 + c] + P[k * 2 + 2 + c]) / 4;
+  const A = a ? [a[0], a[1]] : [P[0], P[1]], B = b ? [b[0], b[1]] : [P[n * 2], P[n * 2 + 1]];
+  const s0 = [A[0] - P[0], A[1] - P[1]], s1 = [B[0] - P[n * 2], B[1] - P[n * 2 + 1]];
+  for (let k = 0; k <= n; k++) { const t = k / n; for (let c = 0; c < 2; c++) P[k * 2 + c] += s0[c] * (1 - t) + s1[c] * t; }
+  const ease = (t: number) => t >= 1 ? 1 : t * t * (3 - 2 * t), span = 0.3, step = total / n;
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    if (a && t < span) { const w = ease(t / span), l = step * k; P[k * 2] = (a[0] + a[2] * l) * (1 - w) + P[k * 2] * w; P[k * 2 + 1] = (a[1] + a[3] * l) * (1 - w) + P[k * 2 + 1] * w; }
+    if (b && 1 - t < span) { const w = ease((1 - t) / span), l = step * (n - k); P[k * 2] = (b[0] + b[2] * l) * (1 - w) + P[k * 2] * w; P[k * 2 + 1] = (b[1] + b[3] * l) * (1 - w) + P[k * 2 + 1] * w; }
+  }
+  return P;
+}
+const RECENT_KEY = 'butcher.line.recent';
+function loadRecent(): string[] { try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(c => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 8) : []; } catch { return []; } }
 type Src = { name: string; W: number; H: number; rgba: Uint8ClampedArray; L: Uint8Array; sw: number };
 export const LINE_RE = /\.(png|jpe?g|webp|bmp|gif)$/i;
 
@@ -28,6 +62,7 @@ function getWorker() {
 function paintOf(la: LineArt, ops: Op[]) {
   const point = new Map<number, string>(), flip = new Set<number>();
   for (const o of ops) {
+    if (!isTap(o)) continue;
     const r = la.region[Math.round(o.y) * la.W + Math.round(o.x)]; if (r == null || r < 0) continue;
     if (o.c) point.set(r, o.c);
     else if (point.has(r)) point.delete(r);
@@ -36,17 +71,44 @@ function paintOf(la: LineArt, ops: Op[]) {
   return { point, base: (r: number) => !la.outside[r] !== flip.has(r) };
 }
 
+// brush strokes in order: 0 = untouched, 1 = erased, 2 + k = cols[k]
+function brushOf(la: LineArt, ops: Op[]) {
+  const cols: string[] = []; let mask: Uint8Array | null = null;
+  for (const o of ops) {
+    if (!('b' in o)) continue;
+    mask ??= new Uint8Array(la.W * la.H);
+    let v = 1; if (o.c) { let k = cols.indexOf(o.c); if (k < 0) { k = cols.length; cols.push(o.c); } v = Math.min(255, k + 2); }
+    const r = o.r, r2 = r * r, pts = o.b;
+    const dab = (cx: number, cy: number) => {
+      for (let y = Math.max(0, Math.ceil(cy - r)); y <= Math.min(la.H - 1, Math.floor(cy + r)); y++) {
+        const dy = y - cy, w = Math.sqrt(Math.max(0, r2 - dy * dy)), row = y * la.W;
+        for (let x = Math.max(0, Math.ceil(cx - w)); x <= Math.min(la.W - 1, Math.floor(cx + w)); x++) mask![row + x] = v;
+      }
+    };
+    dab(pts[0], pts[1]);
+    for (let i = 2; i + 1 < pts.length; i += 2) {
+      const x0 = pts[i - 2], y0 = pts[i - 1], dx = pts[i] - x0, dy = pts[i + 1] - y0, n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / Math.max(1, r / 3)));
+      for (let k = 1; k <= n; k++) dab(x0 + dx * k / n, y0 + dy * k / n);
+    }
+  }
+  return { mask, cols };
+}
+
 type Layers = { line: Uint8ClampedArray; point: Uint8ClampedArray; base: Uint8ClampedArray; all: Uint8ClampedArray };
 function layersOf(la: LineArt, ops: Op[], lineC: string, baseC: string): Layers {
   const N = la.W * la.H, { point, base } = paintOf(la, ops);
   const L = hexRGB(lineC), B = hexRGB(baseC), cols: ([number, number, number] | null)[] = [], bases: boolean[] = [];
   for (let r = 0; r < la.count; r++) { const c = point.get(r); cols.push(c ? hexRGB(c) : null); bases.push(base(r)); }
+  const br = brushOf(la, ops), bc = br.cols.map(hexRGB), toBase = br.cols.map(c => c.toLowerCase() === baseC.toLowerCase());
   const line = new Uint8ClampedArray(N * 4), pt = new Uint8ClampedArray(N * 4), bs = new Uint8ClampedArray(N * 4), all = new Uint8ClampedArray(N * 4);
   for (let i = 0, p = 0; i < N; i++, p += 4) {
-    const r = la.region[i], a = la.alpha[i], c = cols[r];
+    const r = la.region[i], a = la.alpha[i], m = br.mask ? br.mask[i] : 0;
+    let c = cols[r], hasBase = bases[r];
+    // brush: erase both fills, or paint the point color (the base color paints the base)
+    if (m === 1) { c = null; hasBase = false; } else if (m > 1) { if (toBase[m - 2]) { hasBase = true; c = null; } else c = bc[m - 2]; }
     line[p] = L[0]; line[p + 1] = L[1]; line[p + 2] = L[2]; line[p + 3] = a;
     let R = 0, G = 0, Bl = 0, A = 0;
-    if (bases[r]) { bs[p] = R = B[0]; bs[p + 1] = G = B[1]; bs[p + 2] = Bl = B[2]; bs[p + 3] = A = 255; }
+    if (hasBase) { bs[p] = R = B[0]; bs[p + 1] = G = B[1]; bs[p + 2] = Bl = B[2]; bs[p + 3] = A = 255; }
     if (c) { pt[p] = R = c[0]; pt[p + 1] = G = c[1]; pt[p + 2] = Bl = c[2]; pt[p + 3] = A = 255; }
     // line over the fills (straight alpha)
     const la_ = a / 255, oa = la_ + (A / 255) * (1 - la_);
@@ -63,12 +125,13 @@ function composite(la: LineArt, ops: Op[], lineC: string, baseC: string): Uint8C
   const { point, base } = paintOf(la, ops), L = hexRGB(lineC), B = hexRGB(baseC);
   const fill = new Int32Array(la.count * 3).fill(-1);
   for (let r = 0; r < la.count; r++) { const c = point.get(r); const v = c ? hexRGB(c) : base(r) ? B : null; if (v) fill.set(v, r * 3); }
-  const N = la.W * la.H, out = new Uint8ClampedArray(N * 4);
+  const N = la.W * la.H, out = new Uint8ClampedArray(N * 4), br = brushOf(la, ops), bc = br.cols.map(hexRGB);
   for (let i = 0, p = 0; i < N; i++, p += 4) {
-    const r = la.region[i] * 3, a = la.alpha[i];
-    if (fill[r] < 0) { if (a) { out[p] = L[0]; out[p + 1] = L[1]; out[p + 2] = L[2]; out[p + 3] = a; } continue; }
+    const r = la.region[i] * 3, a = la.alpha[i], m = br.mask ? br.mask[i] : 0;
+    const f = m === 0 ? (fill[r] < 0 ? null : [fill[r], fill[r + 1], fill[r + 2]]) : m === 1 ? null : bc[m - 2];
+    if (!f) { if (a) { out[p] = L[0]; out[p + 1] = L[1]; out[p + 2] = L[2]; out[p + 3] = a; } continue; }
     const t = a / 255, u = 1 - t;
-    out[p] = L[0] * t + fill[r] * u; out[p + 1] = L[1] * t + fill[r + 1] * u; out[p + 2] = L[2] * t + fill[r + 2] * u; out[p + 3] = 255;
+    out[p] = L[0] * t + f[0] * u; out[p + 1] = L[1] * t + f[1] * u; out[p + 2] = L[2] * t + f[2] * u; out[p + 3] = 255;
   }
   return out;
 }
@@ -95,7 +158,11 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   const [la, setLa] = useState<LineArt | null>(null);
   const [running, setRunning] = useState(false);
   const [lineC, setLineC] = useState('#000000'), [baseC, setBaseC] = useState('#ffffff'), [pointC, setPointC] = useState('#a2eaba');
-  const [mode, setMode] = useState<'paint' | 'erase'>('paint');
+  const [mode, setMode] = useState<'paint' | 'erase' | 'join' | 'pick'>('paint');
+  const [recent, setRecent] = useState<string[]>(loadRecent);
+  const [jv, setJv] = useState(0); // bumped when the joins change
+  const [drag, setDrag] = useState<number[] | null>(null); // the join or brush stroke being traced, image px
+  const [brush, setBrush] = useState(16); // brush diameter, image px
   const [view, setView] = useState<'src' | 'res'>('res');
   const [fmt, setFmt] = useState<'psd' | 'png'>('psd');
   const [status, setStatus] = useState<Status>([]);
@@ -113,11 +180,12 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       const ctx = c.getContext('2d')!; ctx.drawImage(bmp, 0, 0); bmp.close();
       const rgba = ctx.getImageData(0, 0, W, H).data; c.width = c.height = 0;
       const L = luminance(rgba, W, H), lv = autoLevels(L), sw = strokeWidth(lineAlpha(L, W, H, { ...lv, speck: 0 }), W, H);
-      ops.current = []; redo.current = [];
+      ops.current = []; redo.current = []; setJv(0);
       setLa(null); setView('res');
       setSrc({ name: f.name, W, H, rgba, L, sw });
-      // defaults from the drawing: specks under one line width, breaks up to two
-      setS({ ...lv, speck: Math.max(2, Math.round(sw)), gap: Math.max(2, Math.round(sw * 2)) });
+      // defaults from the drawing: specks under half a line width, breaks up to two
+      setBrush(Math.max(4, Math.round(sw)));
+      setS({ ...lv, speck: Math.max(2, Math.round(sw / 2)), gap: Math.max(2, Math.round(sw * 2)) });
       getWorker()?.postMessage({ src: { L, W, H } });
       setStatus([]);
     } catch (e: any) { setStatus([{ t: tr('{f}: 読み込めません（{e}）', { f: f.name, e: String(e?.message || e) }), c: 'err' }]); }
@@ -129,15 +197,16 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     const id = ++seq.current;
     const t = setTimeout(() => {
       setRunning(true);
+      const joins = joinsOf(ops.current);
       const done = (r: LineArt) => { if (id !== seq.current) return; setLa(r); setRunning(false); };
       const w = getWorker();
       if (w) {
         const on = (e: MessageEvent) => { if (e.data?.id !== id) return; w.removeEventListener('message', on); done(e.data.la); };
-        w.addEventListener('message', on); w.postMessage({ id, s });
-      } else setTimeout(() => done(analyze(src.rgba, src.W, src.H, s, src.L)), 0);
+        w.addEventListener('message', on); w.postMessage({ id, s, joins });
+      } else setTimeout(() => done(analyze(src.rgba, src.W, src.H, s, src.L, joins)), 0);
     }, 120);
     return () => clearTimeout(t);
-  }, [src, s.black, s.white, s.speck, s.gap]);
+  }, [src, s.black, s.white, s.speck, s.gap, jv]);
 
   // the stage shows the composite; the separate layers are made only for output
   const shown = useRef<Uint8ClampedArray | null>(null);
@@ -197,8 +266,11 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const v0 = viewNow();
-    if (pts.size === 1) g.current = { max: 1, t0: performance.now(), moved: false, start: { x: e.clientX, y: e.clientY }, v0, d0: 1, m0: { x: 0, y: 0 } };
-    else if (g.current) {
+    if (pts.size === 1) {
+      g.current = { max: 1, t0: performance.now(), moved: false, start: { x: e.clientX, y: e.clientY }, v0, d0: 1, m0: { x: 0, y: 0 } };
+      if (mode !== 'pick' && la && view === 'res') { const p = imgAt(e.clientX, e.clientY); setDrag([p.x, p.y]); }
+    } else if (g.current) {
+      setDrag(null);
       const [a, b] = [...pts.values()];
       g.current.max = Math.max(g.current.max, pts.size); g.current.v0 = v0;
       g.current.d0 = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)); g.current.m0 = local((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -211,6 +283,10 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
       if (Math.abs(d - q.d0) > 10) q.moved = true;
       if (q.moved) zoomAt(q.v0, q.v0.K * d / q.d0, q.m0, local((a.x + b.x) / 2, (a.y + b.y) / 2));
+    } else if (drag) {
+      const p = imgAt(e.clientX, e.clientY), lx = drag[drag.length - 2], ly = drag[drag.length - 1];
+      if (!q.moved && Math.hypot(e.clientX - q.start.x, e.clientY - q.start.y) > 6) q.moved = true;
+      if (Math.hypot(p.x - lx, p.y - ly) * viewNow().K >= 3) setDrag([...drag, p.x, p.y]);
     } else {
       const dx = e.clientX - q.start.x, dy = e.clientY - q.start.y;
       if (!q.moved && Math.hypot(dx, dy) > 8) q.moved = true;
@@ -221,19 +297,68 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     const q = g.current; if (!pts.delete(e.pointerId) || !q) return;
     if (pts.size) return;
     g.current = null;
+    if (drag) {
+      const d = drag; setDrag(null);
+      if (e.type === 'pointercancel' || q.max >= 2) return;
+      if (mode === 'join') { addJoin(d); return; }
+      // a drag paints with the brush; a tap fills the region
+      if (q.moved) { if (mode === 'paint') remember(pointC); push({ b: d, r: brush / 2, c: mode === 'paint' ? pointC : null }); return; }
+    }
     if (q.moved || e.type === 'pointercancel') return;
     if (q.max >= 2) { if (performance.now() - q.t0 < 400) step(q.max === 2); return; }
     tap(e.clientX, e.clientY);
   }
+  function imgAt(cx: number, cy: number) { const r = cv.current!.getBoundingClientRect(); return { x: (cx - r.left) / r.width * W, y: (cy - r.top) / r.height * H }; }
+  const isJoin = (o: Op) => 'j' in o || 'rm' in o;
+  const push = (o: Op) => { ops.current.push(o); redo.current = []; if (isJoin(o)) setJv(v => v + 1); else repaint(); };
+  // a traced join: ends that land near a loose line end snap to it and follow its direction
+  function addJoin(d: number[]) {
+    if (!la || !src) return;
+    const K = viewNow().K, reach = Math.max(src.sw * 2, 24 / K), n = d.length;
+    const near = (x: number, y: number, skip = -1) => {
+      let best = -1, bd = reach;
+      for (let i = 0; i < la.ends.length; i += 4) { const dd = Math.hypot(la.ends[i] - x, la.ends[i + 1] - y); if (i !== skip && dd < bd) { bd = dd; best = i; } }
+      return best;
+    };
+    const a = near(d[0], d[1]), b = near(d[n - 2], d[n - 1], a);
+    if (n < 4) return;
+    const path = joinCurve(d, a >= 0 ? la.ends.slice(a, a + 4) : null, b >= 0 ? la.ends.slice(b, b + 4) : null);
+    if (path.length < 4 || Math.hypot(path[path.length - 2] - path[0], path[path.length - 1] - path[1]) * K < 8) return;
+    push({ j: path });
+  }
+  // the join under a point, if any (for 消す)
+  function joinAt(x: number, y: number) {
+    const lim = Math.max(src ? src.sw : 4, 12 / viewNow().K);
+    let hit: number[] | null = null, bd = lim;
+    for (const j of joinsOf(ops.current)) for (let i = 0; i + 3 < j.length; i += 2) {
+      const ax = j[i], ay = j[i + 1], dx = j[i + 2] - ax, dy = j[i + 3] - ay, t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+      const dd = Math.hypot(x - ax - dx * t, y - ay - dy * t); if (dd < bd) { bd = dd; hit = j; }
+    }
+    return hit;
+  }
+  function usePoint(c: string) {
+    setPointC(c); setMode('paint');
+  }
+  function remember(c: string) {
+    setRecent(p => { const n = [c, ...p.filter(x => x !== c)].slice(0, 8); try { localStorage.setItem(RECENT_KEY, JSON.stringify(n)); } catch { } return n; });
+  }
   function tap(cx: number, cy: number) {
-    if (!la || view === 'src') return;
-    const r = cv.current!.getBoundingClientRect(), x = (cx - r.left) / r.width * W, y = (cy - r.top) / r.height * H;
+    if (!la || !src || view === 'src') return;
+    const { x, y } = imgAt(cx, cy);
     if (x < 0 || y < 0 || x >= W || y >= H) return;
-    ops.current.push({ x, y, c: mode === 'paint' ? pointC : null }); redo.current = []; repaint();
+    if (mode === 'pick') {
+      const p = (Math.floor(y) * W + Math.floor(x)) * 4, d = shown.current;
+      if (d && d[p + 3]) usePoint('#' + [d[p], d[p + 1], d[p + 2]].map(v => v.toString(16).padStart(2, '0')).join(''));
+      return;
+    }
+    if (mode === 'erase' || mode === 'join') { const j = joinAt(x, y); if (j) { push({ rm: j }); return; } if (mode === 'join') return; }
+    if (mode === 'paint') remember(pointC);
+    push({ x, y, c: mode === 'paint' ? pointC : null });
   }
   function step(back: boolean) {
     const [from, to] = back ? [ops.current, redo.current] : [redo.current, ops.current];
-    const o = from.pop(); if (!o) return; to.push(o); repaint();
+    const o = from.pop(); if (!o) return; to.push(o);
+    if (isJoin(o)) setJv(v => v + 1); else repaint();
   }
   useEffect(() => {
     if (!active) return;
@@ -283,6 +408,12 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
           onKeyDown={src ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
           <canvas ref={cv} id="lPv" width="1" height="1" hidden={!src} style={box} />
+          {src && la && view === 'res' && (mode === 'join' || mode === 'erase' || drag) && <svg className="jn" style={box} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+            {mode === 'join' && Array.from({ length: la.ends.length / 4 }, (_, i) => <circle key={i} cx={la.ends[i * 4]} cy={la.ends[i * 4 + 1]} r={5 / (zv?.K || fit || 1)} />)}
+            {joinsOf(ops.current).map((j, i) => <polyline key={i} className="dash" points={j.join(' ')} />)}
+            {drag && (mode === 'join' ? <polyline points={drag.join(' ')} />
+              : <polyline className="brush" points={drag.join(' ')} style={{ stroke: mode === 'paint' ? pointC : undefined, strokeWidth: brush * (zv?.K || fit || 1) }} />)}
+          </svg>}
           <AddHint hidden={!!src} formats="PNG · JPEG · WebP" />
         </div>
         <div className="status">
@@ -303,8 +434,19 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             <div className="prop pair"><span><Lbl>{tr('隙間')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="0" max="400" value={s.gap} onDraft={num('gap', 0, 400)} />px</span></div>
           </div>
           <div className="sec">
-            <div className="prop use"><Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')]]} onChange={setMode} /></div>
-            <label className="prop pair"><span><Lbl>{tr('色')}</Lbl></span><input type="color" className="col" value={pointC} onChange={e => { setPointC(e.target.value); setMode('paint'); }} /></label>
+            <div className="prop use"><Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')], ['join', tr('つなぐ')]]} onChange={setMode} /></div>
+            <div className="prop pair"><span><Lbl>{tr('ブラシ')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="500" value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</span></div>
+            <div className="prop pair cpick"><span><Lbl>{tr('色')}</Lbl></span>
+              <span className="unit">
+                <input type="color" className="col" aria-label={tr('色')} value={pointC} onChange={e => usePoint(e.target.value)} />
+                <button className="ib" id="lPick" aria-label={tr('スポイト')} title={tr('スポイト')} aria-pressed={mode === 'pick'} onClick={() => setMode(mode === 'pick' ? 'paint' : 'pick')}>
+                  <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10.5 2.5l3 3M9 4l3 3M11.2 5.8L5 12l-2.5.8.8-2.5 6.2-6.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
+                </button>
+              </span>
+            </div>
+            {recent.length > 0 && <div className="prop recent"><span><Lbl>{tr('最近')}</Lbl></span><span className="sws">
+              {recent.map(c => <button key={c} className="swc" aria-label={c} title={c} aria-pressed={c === pointC} style={{ background: c }} onClick={() => usePoint(c)} />)}
+            </span></div>}
             <label className="prop pair"><span><Lbl>{tr('ベース')}</Lbl></span><input type="color" className="col" value={baseC} onChange={e => setBaseC(e.target.value)} /></label>
             <label className="prop pair"><span><Lbl>{tr('線')}</Lbl></span><input type="color" className="col" value={lineC} onChange={e => setLineC(e.target.value)} /></label>
           </div>

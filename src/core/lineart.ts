@@ -16,6 +16,7 @@ export interface LineArt {
   outside: Uint8Array; // per region: 1 = touches the image border
   count: number;
   gaps: number[][];    // bridged breaks, [x0, y0, x1, y1] in image px
+  ends: number[];      // loose line ends: x, y, dx, dy (unit vector pointing out of the line), in image px
 }
 
 const INF = 1e20;
@@ -179,8 +180,8 @@ const N8 = (W: number) => [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1];
 // Bridges breaks in the line: from each loose end of the center line, a short straight segment to the
 // nearest center line ahead of it (a break of up to `gap` px, at most 60° off the stroke direction).
 // Returns the segments as [x0, y0, x1, y1].
-export function findGaps(ink: Uint8Array, W: number, H: number, gap: number, width: number): number[][] {
-  const sk = skeleton(ink, W, H), nb = N8(W), out: number[][] = [];
+export function findGaps(ink: Uint8Array, W: number, H: number, gap: number, width: number): { gaps: number[][]; ends: number[] } {
+  const sk = skeleton(ink, W, H), nb = N8(W), out: number[][] = [], ends: number[] = [];
   // ring of 8 neighbours in order, for counting separate branches around a pixel
   const ring = [-W, -W + 1, 1, W + 1, W, W - 1, -1, -W - 1];
   const branches = (i: number, skip: number) => {
@@ -236,6 +237,8 @@ export function findGaps(ink: Uint8Array, W: number, H: number, gap: number, wid
     }
     if (!ok) continue;
     const dx = x - tail % W, dy = y - (tail / W | 0), dl = Math.hypot(dx, dy); if (dl < 1) continue;
+    ends.push(x, y, dx / dl, dy / dl);
+    if (gap <= 0) continue;
     let best = -1, bd = Infinity;
     for (let ty = Math.max(1, y - R); ty <= Math.min(H - 2, y + R); ty++) for (let tx = Math.max(1, x - R); tx <= Math.min(W - 2, x + R); tx++) {
       const t = ty * W + tx; if (!sk[t] || mark[t] === stamp || dot[piece[t]]) continue;
@@ -248,7 +251,7 @@ export function findGaps(ink: Uint8Array, W: number, H: number, gap: number, wid
     }
     if (best >= 0) out.push([x, y, best % W, best / W | 0]);
   }
-  return out;
+  return { gaps: out, ends };
 }
 
 // Draws a segment into a mask, `t` px thick (8-connected steps at t = 1 still block a 4-connected fill).
@@ -266,7 +269,11 @@ function fillRegions(ink: Uint8Array, W: number, H: number) {
   const N = W * H, paper = new Uint8Array(N); for (let i = 0; i < N; i++) paper[i] = 1 - ink[i];
   const c = components(paper, W, H), region = new Int32Array(N).fill(-1), q = new Int32Array(N);
   const count = c.sizes.length - 1;
-  if (!count) return { region: region.fill(0), count: 1, sizes: [N] };
+  if (!count) return { region: region.fill(0), count: 1, sizes: [N], outside: new Uint8Array([1]) };
+  // outside = paper that reaches the image border (a line running off the edge doesn't count)
+  const outside = new Uint8Array(count), edge = (i: number) => { if (c.lab[i]) outside[c.lab[i] - 1] = 1; };
+  for (let x = 0; x < W; x++) { edge(x); edge(N - W + x); }
+  for (let y = 0; y < H; y++) { edge(y * W); edge(y * W + W - 1); }
   let head = 0, tail = 0;
   for (let i = 0; i < N; i++) if (c.lab[i]) { region[i] = c.lab[i] - 1; q[tail++] = i; }
   // climb into the line, never downhill, so each side stops at the line's center
@@ -284,14 +291,17 @@ function fillRegions(ink: Uint8Array, W: number, H: number) {
     const p = q[head++], x = p % W;
     if (x > 0) any(p, p - 1); if (x < W - 1) any(p, p + 1); if (p >= W) any(p, p - W); if (p < N - W) any(p, p + W);
   }
-  return { region, count, sizes: c.sizes.slice(1) };
+  return { region, count, sizes: c.sizes.slice(1), outside };
 }
 
-export function regions(alpha: Uint8Array, W: number, H: number, gap: number, width = strokeWidth(alpha, W, H)): Omit<LineArt, 'alpha'> {
+// `joins`: polylines [x0, y0, x1, y1, …] drawn by hand that close the drawing like a line (never shown)
+export function regions(alpha: Uint8Array, W: number, H: number, gap: number, width = strokeWidth(alpha, W, H), joins: number[][] = []): Omit<LineArt, 'alpha'> {
   const N = W * H, ink = new Uint8Array(N);
   for (let i = 0; i < N; i++) ink[i] = alpha[i] >= 128 ? 1 : 0;
-  let gaps = gap > 0 ? findGaps(ink, W, H, gap, width) : [];
   const t = Math.max(2, Math.round(width / 2));
+  for (const j of joins) for (let i = 0; i + 3 < j.length; i += 2) stroke(ink, W, H, [j[i], j[i + 1], j[i + 2], j[i + 3]], t);
+  const found = findGaps(ink, W, H, gap, width), ends = found.ends;
+  let gaps = found.gaps;
   let r: ReturnType<typeof fillRegions>;
   if (gaps.length) {
     // drop bridges that cut off a sliver (a bridge to an eye or a bump closes a small wedge)
@@ -309,28 +319,56 @@ export function regions(alpha: Uint8Array, W: number, H: number, gap: number, wi
       r = fillRegions(c2, W, H);
     }
   } else r = fillRegions(ink, W, H);
-  const { region, count } = r, outside = new Uint8Array(count);
-  for (let x = 0; x < W; x++) { outside[region[x]] = 1; outside[region[N - W + x]] = 1; }
-  for (let y = 0; y < H; y++) { outside[region[y * W]] = 1; outside[region[y * W + W - 1]] = 1; }
-  return { W, H, region, outside, count, gaps };
+  const { region, count, outside } = r;
+  return { W, H, region, outside, count, gaps, ends };
+}
+
+// A join is a fill edge, not a line: on the visible paper near it, each pixel takes the region on its side
+// of the curve, so the edge follows the curve smoothly instead of the coarse grid it was found on.
+function smoothJoins(region: Int32Array, alpha: Uint8Array, W: number, H: number, joins: number[][], R: number) {
+  for (const j of joins) {
+    const n = j.length / 2 - 1; if (n < 1) continue;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < j.length; i += 2) { x0 = Math.min(x0, j[i]); x1 = Math.max(x1, j[i]); y0 = Math.min(y0, j[i + 1]); y1 = Math.max(y1, j[i + 1]); }
+    const X0 = Math.max(0, Math.floor(x0 - R)), X1 = Math.min(W - 1, Math.ceil(x1 + R)), Y0 = Math.max(0, Math.floor(y0 - R)), Y1 = Math.min(H - 1, Math.ceil(y1 + R));
+    const set: [number, number][] = [];
+    for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+      const i = y * W + x; if (alpha[i] >= 128) continue;
+      let best = R * R, side = 0, px = 0, py = 0, nx = 0, ny = 0;
+      for (let s = 0; s < n; s++) {
+        const ax = j[s * 2], ay = j[s * 2 + 1], dx = j[s * 2 + 2] - ax, dy = j[s * 2 + 3] - ay, l2 = dx * dx + dy * dy || 1;
+        let t = ((x - ax) * dx + (y - ay) * dy) / l2;
+        // past the ends of the curve the line itself decides
+        if ((s === 0 && t < 0) || (s === n - 1 && t > 1)) continue;
+        t = Math.max(0, Math.min(1, t));
+        const qx = ax + dx * t, qy = ay + dy * t, d = (x - qx) ** 2 + (y - qy) ** 2;
+        if (d < best) { best = d; const l = Math.sqrt(l2); nx = -dy / l; ny = dx / l; side = (x - qx) * nx + (y - qy) * ny >= 0 ? 1 : -1; px = qx; py = qy; }
+      }
+      if (!side) continue;
+      const sx = Math.round(px + nx * side * (R + 1)), sy = Math.round(py + ny * side * (R + 1));
+      if (sx >= 0 && sy >= 0 && sx < W && sy < H) set.push([i, region[sy * W + sx]]);
+    }
+    for (const [i, r] of set) region[i] = r;
+  }
 }
 
 // Regions are found on a smaller copy when lines are thick: the region borders sit at the middle of the
 // line, so a few pixels of rounding stay hidden under it.
-export function analyze(rgba: ArrayLike<number>, W: number, H: number, s: LineSettings, L = luminance(rgba, W, H)): LineArt {
-  return regionsOf(lineAlpha(L, W, H, s), W, H, s.gap);
+export function analyze(rgba: ArrayLike<number>, W: number, H: number, s: LineSettings, L = luminance(rgba, W, H), joins: number[][] = []): LineArt {
+  return regionsOf(lineAlpha(L, W, H, s), W, H, s.gap, undefined, joins);
 }
 // the region step alone, for a line layer that is already known (only the gap setting changed)
-export function regionsOf(alpha: Uint8Array, W: number, H: number, gap: number, sw = strokeWidth(alpha, W, H)): LineArt {
+export function regionsOf(alpha: Uint8Array, W: number, H: number, gap: number, sw = strokeWidth(alpha, W, H), joins: number[][] = []): LineArt {
   const k = Math.max(1, Math.min(4, Math.floor(sw / 5)));
-  if (k === 1) return { alpha, ...regions(alpha, W, H, gap, sw) };
+  if (k === 1) { const r = regions(alpha, W, H, gap, sw, joins); smoothJoins(r.region, alpha, W, H, joins, Math.max(2, Math.round(sw / 2)) / 2 + 2); return { alpha, ...r }; }
   const w = Math.ceil(W / k), h = Math.ceil(H / k), small = new Uint8Array(w * h), sum = new Uint32Array(w * h), cnt = new Uint32Array(w * h);
   const xi = new Int32Array(W); for (let x = 0; x < W; x++) xi[x] = x / k | 0;
   for (let y = 0, i = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++, i++) { const j = o + xi[x]; sum[j] += alpha[i]; cnt[j]++; } }
   for (let j = 0; j < w * h; j++) small[j] = Math.round(sum[j] / cnt[j]);
-  const r = regions(small, w, h, gap / k, sw / k), region = new Int32Array(W * H);
+  const r = regions(small, w, h, gap / k, sw / k, joins.map(j => j.map(v => v / k))), region = new Int32Array(W * H);
   for (let y = 0, i = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++, i++) region[i] = r.region[o + xi[x]]; }
-  return { alpha, W, H, region, outside: r.outside, count: r.count, gaps: r.gaps.map(g => g.map(v => v * k + k / 2)) };
+  smoothJoins(region, alpha, W, H, joins, Math.max(2, Math.round(sw / k / 2)) * k / 2 + k + 1);
+  return { alpha, W, H, region, outside: r.outside, count: r.count, gaps: r.gaps.map(g => g.map(v => v * k + k / 2)), ends: r.ends.map((v, i) => i % 4 < 2 ? v * k + k / 2 : v) };
 }
 
 // Typical line width: 2 × solid area / outline length (a stroke of width w and length l has area wl, outline ≈ 2l).

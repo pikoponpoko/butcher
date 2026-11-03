@@ -362,8 +362,23 @@ fieldset.lock:disabled .prop input, fieldset.lock:disabled .prop select, fieldse
 .prop input.col { width: 64px; height: 24px; padding: 2px; box-sizing: border-box; background: var(--field); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; }
 .prop input.col::-webkit-color-swatch-wrapper { padding: 0; } .prop input.col::-webkit-color-swatch { border: 0; border-radius: 1px; }
 .prop input.col::-moz-color-swatch { border: 0; border-radius: 1px; }
+#lStage > canvas, #lStage > svg.jn { grid-area: 1 / 1; }
+#lStage.zoomed > svg.jn { position: absolute; }
+svg.jn { pointer-events: none; overflow: visible; }
+svg.jn polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+svg.jn polyline.dash { stroke-dasharray: 4 4; }
+svg.jn polyline.brush { stroke: var(--muted); opacity: .6; }
+svg.jn circle { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ib { width: 24px; height: 24px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: var(--field); color: var(--muted); border-radius: 2px; cursor: pointer; padding: 0; box-sizing: border-box; }
+.ib[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.prop.recent { grid-template-columns: 72px minmax(0, 1fr); }
+.sws { display: flex; flex-wrap: wrap; gap: 4px; }
+.swc { width: 20px; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: 2px; cursor: pointer; box-sizing: border-box; }
+.swc[aria-pressed="true"] { outline: 1px solid var(--fg); outline-offset: 1px; }
 @media (max-width: 1100px) {
   .line .insp .sec > .prop.lvrow { grid-template-columns: 44px minmax(0, 1fr); }
   .line .insp .sec > .prop.use { grid-template-columns: minmax(0, 1fr); }
-  .line .insp .prop.pair > input.col { width: 100%; min-width: 48px; justify-self: stretch; }
+  .line .insp .prop.pair > input.col, .line .insp .prop.cpick input.col { width: 100%; min-width: 48px; justify-self: stretch; }
+  .line .insp .prop.cpick > .unit { display: flex; min-width: 0; }
+  .line .insp .sec > .prop.recent { grid-template-columns: 44px minmax(0, 1fr); }
 }

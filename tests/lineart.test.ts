@@ -67,4 +67,25 @@ describe('lineart', () => {
     expect(regionAt(la, 70, 40)).toBe(regionAt(la, 70, 85));
     expect(regionAt(la, 40, 55)).toBe(regionAt(la, 70, 55));
   });
+
+  it('a hand-drawn join closes a wide break, and the fill edge follows it', () => {
+    const W = 140, H = 120, { px, ring } = page(W, H);
+    ring(70, 60, 40, 6, 60, 120); // a third of the ring missing at the bottom
+    const open = analyze(px, W, H, settings(16));
+    expect(regionAt(open, 70, 60)).toBe(regionAt(open, 2, 2));
+    expect(open.ends.length).toBeGreaterThanOrEqual(8);
+    const la = analyze(px, W, H, settings(16), undefined, [[90, 95, 70, 104, 50, 95]]);
+    const inside = regionAt(la, 70, 60);
+    expect(inside).not.toBe(regionAt(la, 2, 2));
+    expect(la.outside[inside]).toBe(0);
+    expect(regionAt(la, 70, 101)).toBe(inside); // just inside the join
+    expect(regionAt(la, 70, 108)).not.toBe(inside); // just outside
+  });
+
+  it('a line running off the image edge does not make the area it encloses outside', () => {
+    const W = 100, H = 80, { px, dot } = page(W, H);
+    for (let y = 10; y < 70; y++) for (let x = 0; x < 100; x++) if (y < 14 || y > 65 || x > 92 || x < 4) dot(x, y);
+    const la = analyze(px, W, H, settings(0));
+    expect(la.outside[regionAt(la, 50, 40)]).toBe(0);
+  });
 });
