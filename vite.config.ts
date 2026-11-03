@@ -19,9 +19,25 @@ function swAssets(): Plugin {
   };
 }
 
+// pdf.js decoders for scanned PDFs (JBIG2 black-and-white, JPEG 2000, ICC color), served from assets/pdfjs/ (see src/app/pdf.ts)
+const PDFJS_WASM = ['jbig2.wasm', 'openjpeg.wasm', 'qcms_bg.wasm'], pdfjsDir = resolve('node_modules/pdfjs-dist/wasm');
+function pdfjsWasm(): Plugin {
+  return {
+    name: 'pdfjs-wasm',
+    configureServer(s) {
+      s.middlewares.use((req, res, next) => {
+        const m = /\/assets\/pdfjs\/([\w.]+)$/.exec(req.url || '');
+        if (!m || !PDFJS_WASM.includes(m[1])) return next();
+        res.setHeader('content-type', 'application/wasm'); res.end(readFileSync(resolve(pdfjsDir, m[1])));
+      });
+    },
+    generateBundle() { for (const f of PDFJS_WASM) this.emitFile({ type: 'asset', fileName: 'assets/pdfjs/' + f, source: readFileSync(resolve(pdfjsDir, f)) }); },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [react(), swAssets()],
+  plugins: [react(), pdfjsWasm(), swAssets()],
   assetsInclude: ['**/*.psd'],
   build: { chunkSizeWarningLimit: 1000 },
   test: { environment: 'node' },

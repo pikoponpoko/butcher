@@ -36,9 +36,11 @@
           "accept": [
             "image/*",
             "video/*",
+            "application/pdf",
             ".psd",
             ".psb",
-            ".clip"
+            ".clip",
+            ".pdf"
           ]
         }
       ]

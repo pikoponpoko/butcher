@@ -1,5 +1,6 @@
 // Desktop (Windows / macOS) shell: serves the built browser app from ./app over app://butcher/.
 const { app, BrowserWindow, Menu, ipcMain, nativeTheme, net, protocol, shell } = require('electron');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -23,6 +24,7 @@ function createWindow() {
   });
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://butcher/')) { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); } });
+  win.webContents.on('did-start-loading', () => { ready = false; });
   win.loadURL('app://butcher/index.html');
 }
 
@@ -49,7 +51,26 @@ ipcMain.handle('check-update', async () => {
 });
 ipcMain.on('version', e => { e.returnValue = app.getVersion(); });
 
-app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+// Files the OS hands over: "Open with" / ScanSnap Home "send to application" (command line), macOS open-file.
+// They are kept until the page asks for them, then sent as they arrive.
+const OPEN_RE = /\.(psd|psb|clip|png|jpe?g|webp|gif|bmp|pdf|mp4|webm|mov|m4v)$/i;
+let pending = [], ready = false;
+const fromArgs = argv => argv.slice(1).filter(a => OPEN_RE.test(a) && fs.existsSync(a));
+function openFiles(paths) {
+  if (!paths.length) return;
+  pending.push(...paths);
+  if (ready && win) { win.webContents.send('files', take()); if (win.isMinimized()) win.restore(); win.focus(); }
+}
+function take() {
+  const out = [];
+  for (const p of pending.splice(0)) { try { out.push({ name: path.basename(p), data: fs.readFileSync(p) }); } catch {} }
+  return out;
+}
+pending = fromArgs(process.argv);
+ipcMain.handle('take-files', () => { ready = true; return take(); });
+app.on('open-file', (e, p) => { e.preventDefault(); openFiles([p]); });
+
+app.on('second-instance', (e, argv) => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } openFiles(fromArgs(argv)); });
 app.whenReady().then(() => {
   // macOS needs a menu bar for Cmd+C / Cmd+V / Cmd+Q etc.
   Menu.setApplicationMenu(MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null);
