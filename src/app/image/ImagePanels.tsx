@@ -43,7 +43,7 @@ function LayerTree({ t }: { t: ImageTool }) {
       const thumbStyle: CSSProperties | undefined = u ? { backgroundImage: `url(${u}), ${CHK}`, backgroundSize: 'contain, 6px 6px', backgroundRepeat: 'no-repeat, repeat', backgroundPosition: 'center, 0 0' } : undefined;
       const bm = n.blendMode, w = PsdCore.collectWarnings(n).filter(x => x !== 'text');
       rows.push(
-        <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ paddingLeft: 8 + depth * 14 + 'px' }}
+        <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ '--ind': Math.min(depth, 3) * 12 + 'px' } as CSSProperties}
           onClick={() => t.setSel(t.sel === n ? null : n)}>
           <button className="eye" aria-label={tr(n.hidden ? '表示' : '非表示')} aria-pressed={!n.hidden}
             onClick={e => { e.stopPropagation(); t.edit(() => { n.hidden = !n.hidden; }); }}>{n.hidden ? ICON.eyeOff : ICON.eye}</button>
@@ -407,7 +407,7 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
   return (
     <main className="center">
       <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '') + (d ? '' : ' pick')} id="stage" ref={stageRef} onClick={d ? undefined : onPick}
-        role={d ? undefined : 'button'} tabIndex={d ? undefined : 0} aria-label={d ? undefined : tr('開く')} onKeyDown={d ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } }} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}` } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        role={d ? undefined : 'button'} tabIndex={d ? undefined : 0} aria-label={d ? undefined : tr('開く')} onKeyDown={d ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } }} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}`, '--sw': x1 - x0, '--sh': y1 - y0 } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <div className="cv" style={cvStyle} hidden={showOut}>
           <canvas id="pv" ref={pvRef} width="1" height="1" hidden={!pv} style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">
@@ -435,8 +435,8 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
       </div>
       <div className="status">
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
-        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{showOut ? (out ? `${out.w}×${out.h}` : '') : sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) + `  ${pv.ms}ms` : ''}</span>
-        <span id="pvState">{pv && (ws.length ? <span className="warn">{tr('警告 {n}', { n: ws.length })}</span> : <span className="ok">{tr('警告なし')}</span>)}</span>
+        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{showOut ? (out ? `${out.w}×${out.h}` : '') : sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) : ''}</span>
+        <span id="pvState">{pv && ws.length > 0 && <span className="warn">{tr('警告 {n}', { n: ws.length })}</span>}</span>
         <Seg id="pvView" hidden={!d} value={showOut ? 'out' : 'src'} options={[['src', tr('元')], ['out', tr('出力')]]} onChange={v => setOutView(v === 'out')} />
         <button className="link" id="saveOne" disabled={!d || t.busy} onClick={t.saveOne}><Lbl>{tr('選択中を保存')}</Lbl></button>
       </div>
