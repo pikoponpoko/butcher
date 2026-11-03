@@ -76,7 +76,7 @@ const EN: Record<string, string> = {
   '目標サイズ': 'Target size', 'なし': 'None', 'ドット': 'Pixel', 'ドットの大きさ': 'Pixel size', '色数': 'Colors', '{n}色': '{n} colors',
   'このまま保存': 'Save anyway',
   '一括書き出し': 'Export all', '選択中を保存': 'Save selected', '中止': 'Cancel', '中止しました': 'Canceled', '{n} ファイルを書き出して中止しました': 'Canceled after exporting {n} files',
-  '出力': 'Output', '音声なしで出力': 'Without audio', 'ファイルは端末内で処理され、送信されません': 'Files are processed on this device and never uploaded',
+  '出力': 'Output', '音声なしで出力': 'Without audio', 'ファイルは端末内で処理されます': 'Files are processed on this device',
   'CLIP STUDIO形式は非公式対応です。検証済みは通常レイヤー・表示・不透明度・フォルダのみ': 'CLIP STUDIO files are read unofficially. Only normal layers, visibility, opacity and folders are verified',
   'このまま開く': 'Open anyway',
   '{f}（{w}×{h}）は処理に約 {m} のメモリが必要です。画像を縮小するか、メモリの多い端末で開いてください': '{f} ({w}×{h}) needs about {m} of memory. Make it smaller or open it on a device with more memory',
