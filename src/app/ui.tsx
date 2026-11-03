@@ -6,11 +6,13 @@ import { otherOf, tr, trAlt } from './i18n';
 import { setTheme, useTheme } from './theme';
 
 // Empty preview: the whole stage opens the file picker; files can also be dropped anywhere.
-export function AddHint({ id, hidden }: { id?: string; hidden?: boolean }) {
+export function AddHint({ id, hidden, formats }: { id?: string; hidden?: boolean; formats: string }) {
   return (
     <span className="add" id={id} hidden={hidden}>
       <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
       <span className="fine">{tr('クリックまたはドロップで追加')}</span><span className="coarse">{tr('タップして追加')}</span>
+      <span className="fmts">{formats}</span>
+      <span>{tr('ファイルは端末内で処理され、送信されません')}</span>
     </span>
   );
 }
@@ -19,6 +21,11 @@ export function AddHint({ id, hidden }: { id?: string; hidden?: boolean }) {
 export function Lbl({ children, other }: { children: ReactNode; other?: string }) {
   const o = other ?? (typeof children === 'string' ? otherOf(children) : undefined);
   return o && o !== children ? <span className="dual"><span>{children}</span><span aria-hidden="true">{o}</span></span> : <>{children}</>;
+}
+
+// Button text that switches between `labels` (Japanese keys) without changing the button's width in either language.
+export function Swap({ labels, at }: { labels: string[]; at: number }) {
+  return <span className="dual all"><span>{tr(labels[at])}</span>{labels.flatMap(k => [tr(k), trAlt(k)]).map((t, i) => <span key={i} aria-hidden="true">{t}</span>)}</span>;
 }
 
 // Hidden <option>s in the other language: a select is as wide as its widest option, hidden ones included.

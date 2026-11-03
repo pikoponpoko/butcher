@@ -3,10 +3,10 @@ import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
 import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import { tr } from '../i18n';
-import { drawSign, signReady } from '../sign';
+import { type Sign, drawSign, getSign, signReady } from '../sign';
 import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
 import { isolateDrawing } from './isolate';
-import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, nameOf, renderNode, safe, stem, targetsOf } from './model';
+import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, makeNamer, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
   mode: Mode; fmt: 'png' | 'jpeg' | 'webp' | 'ico'; quality: string; size: 'orig' | 'w' | 'h' | Group; picks: string[]; fits: Record<Group, Fit>; px: string; basis: 'canvas' | 'image'; trim: boolean; slTrim: boolean; slIso: boolean;
@@ -90,7 +90,7 @@ function borderColor(c: HTMLCanvasElement, x: number, y: number, w: number, h: n
   let best: number[] | null = null; for (const b of bins.values()) if (!best || b[3] > best[3]) best = b;
   return `rgb(${Math.round(best![0] / best![3])},${Math.round(best![1] / best![3])},${Math.round(best![2] / best![3])})`;
 }
-async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null, ps?: Preset | null): Promise<Encoded | null> {
+async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null, ps?: Preset | null, sign: Sign = getSign()): Promise<Encoded | null> {
   let c = toCanvas(rgba, W, H), x = 0, y = 0, w = W, h = H;
   if (crop) { const s = renderSlice(o, rgba, W, H, crop); if (!s) return null; c = toCanvas(s.px, s.r.w, s.r.h); w = s.r.w; h = s.r.h; }
   else if (o.trim) { const b = PsdCore.alphaBounds(rgba, W, H); if (!b) return null; ({ x, y, w, h } = b); }
@@ -112,9 +112,11 @@ async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number
   const pad = fit === 'contain' ? borderColor(c, x, y, w, h) : null;
   if (fmt === 'jpeg' || pad) { ctx.fillStyle = pad || '#ffffff'; ctx.fillRect(0, 0, out.width, out.height); }
   ctx.drawImage(c, x, y, w, h, dx, dy, dw, dh);
-  drawSign(ctx, 0, 0, out.width, out.height);
+  drawSign(ctx, 0, 0, out.width, out.height, sign);
   const q = Math.min(100, Math.max(1, +o.quality || 90)) / 100;
   const blob = await new Promise<Blob | null>(res => out.toBlob(res, 'image/' + fmt, q));
+  // free the canvas memory now instead of at the next GC (matters on phones with large images)
+  out.width = out.height = c.width = c.height = 0;
   return blob && [{ tail: tagOf(ps ?? null) + '.' + extOf(o, ps), blob }];
 }
 const pngBlob = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('PNG')), 'image/png'));
@@ -156,6 +158,15 @@ export const variantsOf = (o: Settings): (Preset | null)[] => (o.size === 'sns' 
 const tagOf = (v: Preset | null) => v ? '_' + v.id : '';
 export const filesPerTarget = (o: Settings) => o.fmt === 'ico' ? 1 + FAVICON_PNG.length : variantsOf(o).length;
 
+// Output preview: the first file 選択中を保存 would write for these pixels (trim, slice crop, fill, size, signature,
+// JPEG background). Favicon shows its largest PNG.
+export async function previewOutput(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, s: Slice | null): Promise<Blob | null> {
+  const v = variantsOf(o)[0]; if (v === undefined) return null;
+  await signReady();
+  const f = await encode(o, rgba, W, H, s, v);
+  return f ? f.filter(x => !x.tail.endsWith('.ico')).pop()?.blob ?? null : null;
+}
+
 export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice | null): Promise<Status> {
   const r = renderNode(d, n, o.hidden), vs = variantsOf(o);
   if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
@@ -172,8 +183,11 @@ export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice 
 
 declare global { function showDirectoryPicker(o?: { id?: string; mode?: string }): Promise<FileSystemDirectoryHandle> }
 // Returns the final status; `progress` reports per-file progress, `noDir` is called when folder output isn't available.
-export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void): Promise<Status> {
-  const zip = new JSZip(), report: string[] = [], vs = variantsOf(o);
+// The job is fixed when it starts: settings `o`, the documents, their export targets (slices copied, names resolved)
+// and the signature. `signal` cancels between files.
+export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void, signal?: AbortSignal): Promise<Status> {
+  const zip = new JSZip(), report: string[] = [], vs = variantsOf(o), sign = getSign();
+  const jobs = docs.map(d => ({ d, name: d.name, ts: targetsOf(d, o.mode, o.hidden).map(t => ({ ...t, s: t.s && { ...t.s }, label: t.s ? t.s.name : nameOf(t.n!) })) }));
   if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
   let dir: FileSystemDirectoryHandle | null = null;
   if (o.out === 'dir') {
@@ -182,32 +196,35 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
   }
   let written = 0, skipped = 0;
   const share = o.out === 'each' && shareMode(), shared: { name: string; data: Blob }[] = [];
-  await signReady();
+  await signReady(sign);
+  // one naming rule for ZIP, folder and 個別: the same path ("/" flattened to "_" when files are saved one by one)
+  const flat = o.out === 'each', names = makeNamer(flat), bases = makeNamer(false);
+  names.reserve('warnings.txt');
   try {
-    for (const d of docs) {
-      const base = docs.length > 1 ? safe(stem(d.name)) + '/' : '';
-      const ts = targetsOf(d, o.mode, o.hidden), used = new Set<string>();
+    for (const { d, name: dname, ts } of jobs) {
+      const base = docs.length > 1 ? bases.take(safe(stem(dname)), ['/']) + '/' : '';
       let full: Rendered | null = null;
       for (let i = 0; i < ts.length; i++) {
         const t = ts[i];
-        progress([{ t: `${d.name} ${i + 1}/${ts.length}` }]);
+        progress([{ t: `${dname} ${i + 1}/${ts.length}` }]);
         await new Promise(r => setTimeout(r));
-        const r = t.s ? (full ||= renderNode(d, null, o.hidden)) : renderNode(d, t.n, o.hidden);
+        if (signal?.aborted) return [{ t: written && o.out !== 'zip' ? tr('{n} ファイルを書き出して中止しました', { n: written }) : tr('中止しました') }];
+        const r = t.s ? (full ||= renderNode(d, null, o.hidden)) : renderNode(d, t.n ?? null, o.hidden);
         const ws = dedupe(r.warnings.filter(w => w.type !== 'text'));
-        let stemName = safe(t.s ? t.s.name : nameOf(t.n));
-        if (t.s) { let k = 2; const b = stemName; while (used.has(stemName)) stemName = `${b}_${k++}`; used.add(stemName); }
+        const stemName = safe(t.label);
         const rel = o.mode === 'both' ? (t.kind === 'folder' ? 'folders/' : 'layers/') : '';
         const name0 = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : '')) + o.prefix + stemName + o.suffix;
         if (ws.length) report.push(`${name0}\n` + ws.map(w => `  - ${w.path}: ${tr(WARN_JA[w.type] || w.type)}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
         if (ws.length && !o.incWarn) { skipped++; continue; }
         const files: Encoded = [];
         for (const v of vs) {
-          const f = await encode(o, r.rgba, r.W, r.H, t.s, v);
+          const f = await encode(o, r.rgba, r.W, r.H, t.s, v, sign);
           if (!f) { report.push(`${name0}${tagOf(v)}.${extOf(o, v)}\n  - ${tr('空の画像のため省略')}`); break; }
           files.push(...f);
         }
+        const name1 = files.length ? names.take(name0, files.map(f => f.tail)) : name0;
         for (const f of files) {
-          const path = name0 + f.tail;
+          const path = name1 + f.tail;
           if (dir) await writeTo(dir, path, f.blob);
           else if (share) shared.push({ name: path.replace(/\//g, '_'), data: f.blob });
           else if (o.out === 'each') { const res = await saveBlob(path.replace(/\//g, '_'), f.blob); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
@@ -224,7 +241,8 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
     if (report.length) zip.file('warnings.txt', (skipped ? tr('警告のため書き出さなかった画像: {n}', { n: skipped }) + '\n\n' : '') + report.join('\n\n') + '\n');
     if (!written) return none;
     const data = await zip.generateAsync({ type: 'blob' });
-    const name = (docs.length > 1 ? 'psd-export' : safe(stem(docs[0].name))) + '.zip';
+    if (signal?.aborted) return [{ t: tr('中止しました') }];
+    const name = (docs.length > 1 ? 'psd-export' : safe(stem(jobs[0].name))) + '.zip';
     const res = await saveBlob(name, data);
     return res === 'ok' ? done : [{ t: saveFailText(res) }];
   } catch (e: any) { return [{ t: tr('エラー: {e}', { e: tr(String(e.message || e)) }), c: 'err' }]; }
