@@ -118,6 +118,8 @@ export function useImageTool() {
       for (const p of add) doc.slices.push({ id: newSliceId(), name: nextSliceName(doc), ...p, on: true });
       doc.sliceSel = doc.slices[doc.slices.length - add.length].id;
     });
+    // separate drawings on a sheet: cut each one clear of its neighbors and down to the drawing
+    if (found.drawings && add.length) setO(p => ({ ...p, slIso: true, slTrim: true }));
     setStatus([{ t: tr('{n} 件のスライスを追加', { n: add.length }), c: 'ok' }]);
   }
   async function saveSlices() {

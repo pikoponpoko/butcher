@@ -196,12 +196,12 @@ export function detectDrawings(px: Uint8ClampedArray, W: number, H: number): Rec
 
 // Auto slices: comic panels when the frames hold most of the ink, otherwise one slice per drawing
 // (a sheet of drawings around a guide frame finds the guide as a "panel", but most ink lies outside it).
-export function detectSlices(px: Uint8ClampedArray, W: number, H: number): Rect[] {
+export function detectSlices(px: Uint8ClampedArray, W: number, H: number): Rect[] & { drawings?: boolean } {
   const m = inkMask(px, W, H), panels = panelsOf(m, W, H);
   let ink = 0, inP = 0;
   for (let p = 0; p < m.length; p++) ink += m[p];
   for (const r of panels) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) inP += m[y * W + x];
   if (panels.length && inP >= ink * 0.6) return panels;
   const dr = drawingsOf(m, W, H);
-  return dr.length ? dr : panels;
+  return dr.length ? Object.assign(dr, { drawings: true }) : panels;
 }
