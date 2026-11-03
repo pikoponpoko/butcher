@@ -5,6 +5,7 @@ import { type Doc, type Node, type Slice, type Snap, SRC_RE, TooLarge, hiddenKey
 import { type Rect, detectSlices } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
+import { isPdf, pdfToImages } from '../pdf';
 import { tr } from '../i18n';
 import { fmtMem } from '../memory';
 import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
@@ -60,10 +61,20 @@ export function useImageTool() {
 
   // a file that is likely too large waits here until このまま開く (force) or the next open
   const [big, setBig] = useState<File | null>(null);
+  // a PDF (scanner output) opens as one image per page
+  async function expandPdfs(files: File[]) {
+    const out: File[] = [];
+    for (const f of files) {
+      if (!isPdf(f)) { out.push(f); continue; }
+      try { setStatus([{ t: f.name }]); out.push(...await pdfToImages(f)); }
+      catch (err: any) { setStatus([{ t: tr('{f}: 読み込めません（{e}）', { f: f.name, e: tr(String(err.message || err)) }), c: 'err' }]); }
+    }
+    return out;
+  }
   async function openFiles(files: File[], force = false) {
     let last: Doc | undefined;
     setBig(null);
-    for (const f of files) {
+    for (const f of await expandPdfs(files)) {
       try { setStatus([{ t: f.name }]); last = await openFile(f.name, await f.arrayBuffer(), force); docs.push(last); setStatus([]); }
       catch (err: any) {
         if (err instanceof TooLarge) { setBig(f); setStatus([{ t: tr('{f}（{w}×{h}）は処理に約 {m} のメモリが必要です。画像を縮小するか、メモリの多い端末で開いてください', { f: f.name, w: err.W, h: err.H, m: fmtMem(err.need) }), c: 'warn' }]); }
@@ -150,7 +161,7 @@ export function useImageTool() {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
     openFiles, addDoc, big, openBig: () => { if (big) openFiles([big], true); }, selectDoc, closeDoc, doExport, cancel, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
     begin, end, edit, undo: () => step(true), redo: () => step(false),
-    accepts: (f: File) => SRC_RE.test(f.name),
+    accepts: (f: File) => SRC_RE.test(f.name) || isPdf(f),
   };
 }
 export type ImageTool = ReturnType<typeof useImageTool>;

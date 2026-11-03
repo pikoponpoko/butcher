@@ -14,7 +14,7 @@ export async function pickFiles(id: string, accept: Accept, multiple: boolean, i
   } catch (e: any) { if (e?.name !== 'AbortError') input?.click(); }
 }
 
-export const IMG_ACCEPT: Accept = { 'image/*': ['.psd', '.psb', '.clip', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'] };
+export const IMG_ACCEPT: Accept = { 'image/*': ['.psd', '.psb', '.clip', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'], 'application/pdf': ['.pdf'] };
 export const LINE_ACCEPT: Accept = { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'] };
 export const VIDEO_ACCEPT: Accept = { 'video/*': ['.mp4', '.webm', '.mov', '.m4v'] };
 
