@@ -36,3 +36,7 @@ npm run build      # dist/ に書き出し
 npm run build
 cd desktop && npm install && npm start   # ローカルで起動
 ```
+
+## ライセンス
+
+[MIT License](LICENSE)
