@@ -352,6 +352,32 @@ function smoothJoins(region: Int32Array, alpha: Uint8Array, W: number, H: number
   }
 }
 
+// Thin paper (a narrow crescent between two lines) breaks into small regions where the scan pinches it
+// shut, though it reads as one area. A small region (less visible paper than a bridged sliver, see
+// regions()) joins the largest region whose visible paper lies within `reach` px of its own. A highlight
+// in an eye or a hole in a nose sits further inside the ink, and stays.
+function mergeSlivers(region: Int32Array, alpha: Uint8Array, W: number, H: number, count: number, min: number, reach: number) {
+  const N = W * H, size = new Float64Array(count);
+  for (let i = 0; i < N; i++) if (region[i] >= 0 && alpha[i] < 128) size[region[i]]++;
+  let any = false; for (let r = 0; r < count; r++) if (size[r] > 0 && size[r] < min) { any = true; break; }
+  if (!any) return;
+  const to = new Int32Array(count).fill(-1), best = new Float64Array(count), R = Math.max(2, Math.round(reach)), R2 = R * R;
+  for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
+    const a = region[i]; if (a < 0 || alpha[i] >= 128 || size[a] >= min) continue;
+    for (let dy = -R; dy <= R; dy++) {
+      const yy = y + dy; if (yy < 0 || yy >= H) continue;
+      for (let dx = -R; dx <= R; dx++) {
+        const xx = x + dx; if (xx < 0 || xx >= W || dx * dx + dy * dy > R2) continue;
+        const j = yy * W + xx, b = region[j];
+        if (b >= 0 && b !== a && alpha[j] < 128 && size[b] > size[a] && size[b] > best[a]) { best[a] = size[b]; to[a] = b; }
+      }
+    }
+  }
+  const map = new Int32Array(count);
+  for (let r = 0; r < count; r++) { let q = r; for (let n = 0; to[q] >= 0 && n < count; n++) q = to[q]; map[r] = q; }
+  for (let i = 0; i < N; i++) if (region[i] >= 0) region[i] = map[region[i]];
+}
+
 // Regions are found on a smaller copy when lines are thick: the region borders sit at the middle of the
 // line, so a few pixels of rounding stay hidden under it.
 export function analyze(rgba: ArrayLike<number>, W: number, H: number, s: LineSettings, L = luminance(rgba, W, H), joins: number[][] = []): LineArt {
@@ -360,13 +386,15 @@ export function analyze(rgba: ArrayLike<number>, W: number, H: number, s: LineSe
 // the region step alone, for a line layer that is already known (only the gap setting changed)
 export function regionsOf(alpha: Uint8Array, W: number, H: number, gap: number, sw = strokeWidth(alpha, W, H), joins: number[][] = []): LineArt {
   const k = Math.max(1, Math.min(4, Math.floor(sw / 5)));
-  if (k === 1) { const r = regions(alpha, W, H, gap, sw, joins); smoothJoins(r.region, alpha, W, H, joins, Math.max(2, Math.round(sw / 2)) / 2 + 2); return { alpha, ...r }; }
+  const min = (gap + sw) * (gap + sw) * 0.6;
+  if (k === 1) { const r = regions(alpha, W, H, gap, sw, joins); mergeSlivers(r.region, alpha, W, H, r.count, min, sw * 0.3); smoothJoins(r.region, alpha, W, H, joins, Math.max(2, Math.round(sw / 2)) / 2 + 2); return { alpha, ...r }; }
   const w = Math.ceil(W / k), h = Math.ceil(H / k), small = new Uint8Array(w * h), sum = new Uint32Array(w * h), cnt = new Uint32Array(w * h);
   const xi = new Int32Array(W); for (let x = 0; x < W; x++) xi[x] = x / k | 0;
   for (let y = 0, i = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++, i++) { const j = o + xi[x]; sum[j] += alpha[i]; cnt[j]++; } }
   for (let j = 0; j < w * h; j++) small[j] = Math.round(sum[j] / cnt[j]);
   const r = regions(small, w, h, gap / k, sw / k, joins.map(j => j.map(v => v / k))), region = new Int32Array(W * H);
   for (let y = 0, i = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++, i++) region[i] = r.region[o + xi[x]]; }
+  mergeSlivers(region, alpha, W, H, r.count, min, sw * 0.3);
   smoothJoins(region, alpha, W, H, joins, Math.max(2, Math.round(sw / k / 2)) * k / 2 + k + 1);
   return { alpha, W, H, region, outside: r.outside, count: r.count, gaps: r.gaps.map(g => g.map(v => v * k + k / 2)), ends: r.ends.map((v, i) => i % 4 < 2 ? v * k + k / 2 : v) };
 }
