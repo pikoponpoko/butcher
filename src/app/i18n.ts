@@ -83,7 +83,7 @@ const EN: Record<string, string> = {
   'メモリが足りません（目安 {m}）。範囲・サイズ・FPSを下げるか、目標サイズを外してください': 'Not enough memory (about {m}). Lower the range, size or FPS, or clear the target size', 'テーマ': 'Theme',
   // line art
   '線画': 'Line art', 'ごみ取り': 'Despeckle', '隙間': 'Gaps', '塗る': 'Fill', '消す': 'Erase', '色': 'Color', 'ベース': 'Base', '線': 'Line', 'ポイントカラー': 'Point color',
-  '処理中': 'Processing', '画像タブで開く': 'Open in Image', 'つなぐ': 'Join', 'スポイト': 'Eyedropper', '最近': 'Recent', 'ブラシ': 'Brush', 'ライト': 'Light', 'ダーク': 'Dark',
+  '処理中': 'Processing', '画像タブで開く': 'Open in Image', 'つなぐ': 'Join', 'スポイト': 'Eyedropper', '最近': 'Recent', 'ブラシ': 'Brush', 'ベタ': 'Solid', 'グラデ': 'Gradient', 'トーン': 'Tone', '濃度': 'Density', '間隔': 'Pitch', 'ライト': 'Light', 'ダーク': 'Dark',
   '{n} フレーム': '{n} frames', '{s}秒': '{s}s', '{n} フレームを超えています': 'Over {n} frames', 'GIFは50fpsまで': 'GIF max 50 fps',
   '{s} を書き出し': '{s} exported', '{n} 件は目標 {t} MB を超えています': '{n} over the {t} MB target', '目標 {t} MB に届きません（最小 {s}）': 'Can’t reach {t} MB (smallest {s})',
   'フレーム取得 {i}/{n}': 'Reading frames {i}/{n}', '{f}作成 {n}回目': '{f} encoding, try {n}', 'WebP作成 {i}/{n}': 'WebP encoding {i}/{n}', 'MP4作成 {i}/{n}': 'MP4 encoding {i}/{n}',

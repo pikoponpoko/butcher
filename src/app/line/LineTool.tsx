@@ -14,8 +14,12 @@ export interface LineToolApi { open(f: File): void; export(): void }
 export interface LineState { open: boolean; busy: boolean }
 // history: a tap paints the region under (x, y) with `c` or erases it (null); `j` adds a join, `rm` takes one away
 // `b` is a brush stroke (points, radius `r`) that paints `c` or erases (null) pixel by pixel over the regions
-type Op = { x: number; y: number; c: string | null } | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null };
-const isTap = (o: Op): o is { x: number; y: number; c: string | null } => 'x' in o;
+// `fx`: a gradient from `c` to `c2`, or a dot screen tone (in the line color, `cov` = ink share, `per` = dot pitch px)
+// that fades out from (x0, y0) to (x1, y1) when those are given
+export type Fx = { k: 'grad'; c2: string; x0: number; y0: number; x1: number; y1: number } | { k: 'tone'; cov: number; per: number; x0?: number; y0?: number; x1?: number; y1?: number };
+type Tap = { x: number; y: number; c: string | null; fx?: Fx };
+type Op = Tap | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null };
+const isTap = (o: Op): o is Tap => 'x' in o;
 // joins in effect after replaying the history
 function joinsOf(ops: Op[]) {
   const on: number[][] = [];
@@ -60,11 +64,11 @@ function getWorker() {
 
 // which regions get the base and which a point color, replaying the taps in order
 function paintOf(la: LineArt, ops: Op[]) {
-  const point = new Map<number, string>(), flip = new Set<number>();
+  const point = new Map<number, { c: string; fx?: Fx }>(), flip = new Set<number>();
   for (const o of ops) {
     if (!isTap(o)) continue;
     const r = la.region[Math.round(o.y) * la.W + Math.round(o.x)]; if (r == null || r < 0) continue;
-    if (o.c) point.set(r, o.c);
+    if (o.c) point.set(r, { c: o.c, fx: o.fx });
     else if (point.has(r)) point.delete(r);
     else flip.has(r) ? flip.delete(r) : flip.add(r);
   }
@@ -95,46 +99,63 @@ function brushOf(la: LineArt, ops: Op[]) {
 }
 
 type Layers = { line: Uint8ClampedArray; point: Uint8ClampedArray; base: Uint8ClampedArray; all: Uint8ClampedArray };
-function layersOf(la: LineArt, ops: Op[], lineC: string, baseC: string): Layers {
-  const N = la.W * la.H, { point, base } = paintOf(la, ops);
-  const L = hexRGB(lineC), B = hexRGB(baseC), cols: ([number, number, number] | null)[] = [], bases: boolean[] = [];
-  for (let r = 0; r < la.count; r++) { const c = point.get(r); cols.push(c ? hexRGB(c) : null); bases.push(base(r)); }
+
+// position along a gradient: 0 at (x0, y0), 1 at (x1, y1)
+const along = (f: { x0: number; y0: number; x1: number; y1: number }, x: number, y: number) => {
+  const dx = f.x1 - f.x0, dy = f.y1 - f.y0, t = ((x - f.x0) * dx + (y - f.y0) * dy) / (dx * dx + dy * dy || 1);
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+};
+// ink of a 45° dot screen at (x, y), antialiased: 0..1
+export function toneAt(x: number, y: number, cov: number, per: number) {
+  const u = (x + y) * Math.SQRT1_2 / per, v = (y - x) * Math.SQRT1_2 / per;
+  const du = u - Math.round(u), dv = v - Math.round(v), d = Math.sqrt(du * du + dv * dv) * per, rad = Math.sqrt(Math.min(0.95, cov) / Math.PI) * per;
+  const a = rad - d + 0.5; return cov <= 0 ? 0 : a <= 0 ? 0 : a >= 1 ? 1 : a;
+}
+
+// One pass for both the stage (composite only) and the output (separate layers too).
+// Fills: base, then the point color / gradient / tone over it, then the line on top (straight alpha).
+function render(la: LineArt, ops: Op[], lineC: string, baseC: string, sep: boolean) {
+  const N = la.W * la.H, W = la.W, { point, base } = paintOf(la, ops), L = hexRGB(lineC), B = hexRGB(baseC);
+  const pc = new Int32Array(la.count * 3).fill(-1), fx: (Fx | undefined)[] = [], c2: number[][] = [], bases = new Uint8Array(la.count);
+  for (let r = 0; r < la.count; r++) {
+    const q = point.get(r); bases[r] = base(r) ? 1 : 0;
+    if (q) { pc.set(hexRGB(q.c), r * 3); fx[r] = q.fx; if (q.fx?.k === 'grad') c2[r] = hexRGB(q.fx.c2); }
+  }
   const br = brushOf(la, ops), bc = br.cols.map(hexRGB), toBase = br.cols.map(c => c.toLowerCase() === baseC.toLowerCase());
-  const line = new Uint8ClampedArray(N * 4), pt = new Uint8ClampedArray(N * 4), bs = new Uint8ClampedArray(N * 4), all = new Uint8ClampedArray(N * 4);
+  const all = new Uint8ClampedArray(N * 4), line = sep ? new Uint8ClampedArray(N * 4) : all, pt = sep ? new Uint8ClampedArray(N * 4) : all, bs = sep ? new Uint8ClampedArray(N * 4) : all;
   for (let i = 0, p = 0; i < N; i++, p += 4) {
-    const r = la.region[i], a = la.alpha[i], m = br.mask ? br.mask[i] : 0;
-    let c = cols[r], hasBase = bases[r];
-    // brush: erase both fills, or paint the point color (the base color paints the base)
-    if (m === 1) { c = null; hasBase = false; } else if (m > 1) { if (toBase[m - 2]) { hasBase = true; c = null; } else c = bc[m - 2]; }
-    line[p] = L[0]; line[p + 1] = L[1]; line[p + 2] = L[2]; line[p + 3] = a;
-    let R = 0, G = 0, Bl = 0, A = 0;
-    if (hasBase) { bs[p] = R = B[0]; bs[p + 1] = G = B[1]; bs[p + 2] = Bl = B[2]; bs[p + 3] = A = 255; }
-    if (c) { pt[p] = R = c[0]; pt[p + 1] = G = c[1]; pt[p + 2] = Bl = c[2]; pt[p + 3] = A = 255; }
-    // line over the fills (straight alpha)
-    const la_ = a / 255, oa = la_ + (A / 255) * (1 - la_);
-    if (oa > 0) {
-      all[p] = (L[0] * la_ + R * (A / 255) * (1 - la_)) / oa; all[p + 1] = (L[1] * la_ + G * (A / 255) * (1 - la_)) / oa; all[p + 2] = (L[2] * la_ + Bl * (A / 255) * (1 - la_)) / oa;
-      all[p + 3] = oa * 255;
+    const r = la.region[i], a = la.alpha[i], m = br.mask ? br.mask[i] : 0, r3 = r * 3;
+    let hb = bases[r], PR = 0, PG = 0, PB = 0, PA = 0;
+    if (m === 1) hb = 0;
+    else if (m > 1) { if (toBase[m - 2]) hb = 1; else { const c = bc[m - 2]; PR = c[0]; PG = c[1]; PB = c[2]; PA = 1; } }
+    else if (pc[r3] >= 0) {
+      const f = fx[r];
+      if (!f) { PR = pc[r3]; PG = pc[r3 + 1]; PB = pc[r3 + 2]; PA = 1; }
+      else {
+        const x = i % W, y = (i - x) / W;
+        if (f.k === 'grad') { const t = along(f, x, y), u = 1 - t, e = c2[r]; PR = pc[r3] * u + e[0] * t; PG = pc[r3 + 1] * u + e[1] * t; PB = pc[r3 + 2] * u + e[2] * t; PA = 1; }
+        else { const cov = f.x1 == null ? f.cov : f.cov * (1 - along(f as any, x, y)); PA = toneAt(x, y, cov, f.per); PR = L[0]; PG = L[1]; PB = L[2]; }
+      }
     }
+    // the fill under the line: point over base
+    let FR = PR, FG = PG, FB = PB, FA = PA;
+    if (hb) { const u = 1 - PA; FR = PR * PA + B[0] * u; FG = PG * PA + B[1] * u; FB = PB * PA + B[2] * u; FA = 1; }
+    if (sep) {
+      line[p] = L[0]; line[p + 1] = L[1]; line[p + 2] = L[2]; line[p + 3] = a;
+      if (hb) { bs[p] = B[0]; bs[p + 1] = B[1]; bs[p + 2] = B[2]; bs[p + 3] = 255; }
+      if (PA) { pt[p] = PR; pt[p + 1] = PG; pt[p + 2] = PB; pt[p + 3] = PA * 255; }
+    }
+    const t = a / 255, oa = t + FA * (1 - t);
+    if (oa > 0) {
+      const k = FA * (1 - t);
+      all[p] = (L[0] * t + FR * k) / oa; all[p + 1] = (L[1] * t + FG * k) / oa; all[p + 2] = (L[2] * t + FB * k) / oa; all[p + 3] = oa * 255;
+    } else if (!sep) { all[p] = all[p + 1] = all[p + 2] = all[p + 3] = 0; }
   }
   return { line, point: pt, base: bs, all };
 }
-
-// what the stage shows: fills under the line, one pass over a 32-bit view
-function composite(la: LineArt, ops: Op[], lineC: string, baseC: string): Uint8ClampedArray {
-  const { point, base } = paintOf(la, ops), L = hexRGB(lineC), B = hexRGB(baseC);
-  const fill = new Int32Array(la.count * 3).fill(-1);
-  for (let r = 0; r < la.count; r++) { const c = point.get(r); const v = c ? hexRGB(c) : base(r) ? B : null; if (v) fill.set(v, r * 3); }
-  const N = la.W * la.H, out = new Uint8ClampedArray(N * 4), br = brushOf(la, ops), bc = br.cols.map(hexRGB);
-  for (let i = 0, p = 0; i < N; i++, p += 4) {
-    const r = la.region[i] * 3, a = la.alpha[i], m = br.mask ? br.mask[i] : 0;
-    const f = m === 0 ? (fill[r] < 0 ? null : [fill[r], fill[r + 1], fill[r + 2]]) : m === 1 ? null : bc[m - 2];
-    if (!f) { if (a) { out[p] = L[0]; out[p + 1] = L[1]; out[p + 2] = L[2]; out[p + 3] = a; } continue; }
-    const t = a / 255, u = 1 - t;
-    out[p] = L[0] * t + f[0] * u; out[p + 1] = L[1] * t + f[1] * u; out[p + 2] = L[2] * t + f[2] * u; out[p + 3] = 255;
-  }
-  return out;
-}
+const layersOf = (la: LineArt, ops: Op[], lineC: string, baseC: string): Layers => render(la, ops, lineC, baseC, true);
+// what the stage shows
+const composite = (la: LineArt, ops: Op[], lineC: string, baseC: string) => render(la, ops, lineC, baseC, false).all;
 
 const img = (data: Uint8ClampedArray, W: number, H: number) => ({ width: W, height: H, data });
 // three layers, bottom first, as the image tool and ag-psd read them
@@ -163,6 +184,8 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   const [jv, setJv] = useState(0); // bumped when the joins change
   const [drag, setDrag] = useState<number[] | null>(null); // the join or brush stroke being traced, image px
   const [brush, setBrush] = useState(16); // brush diameter, image px
+  const [fill, setFill] = useState<'solid' | 'grad' | 'tone'>('solid');
+  const [pointC2, setPointC2] = useState('#ffffff'), [cov, setCov] = useState(20), [per, setPer] = useState(8);
   const [view, setView] = useState<'src' | 'res'>('res');
   const [fmt, setFmt] = useState<'psd' | 'png'>('psd');
   const [status, setStatus] = useState<Status>([]);
@@ -184,7 +207,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       setLa(null); setView('res');
       setSrc({ name: f.name, W, H, rgba, L, sw });
       // defaults from the drawing: specks under half a line width, breaks up to two
-      setBrush(Math.max(4, Math.round(sw)));
+      setBrush(Math.max(4, Math.round(sw))); setPer(Math.max(4, Math.round(sw / 4.5)));
       setS({ ...lv, speck: Math.max(2, Math.round(sw / 2)), gap: Math.max(2, Math.round(sw * 2)) });
       getWorker()?.postMessage({ src: { L, W, H } });
       setStatus([]);
@@ -302,7 +325,10 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       if (e.type === 'pointercancel' || q.max >= 2) return;
       if (mode === 'join') { addJoin(d); return; }
       // a drag paints with the brush; a tap fills the region
-      if (q.moved) { if (mode === 'paint') remember(pointC); push({ b: d, r: brush / 2, c: mode === 'paint' ? pointC : null }); return; }
+      if (q.moved) {
+        if (mode === 'paint' && fill !== 'solid') { paintFx(d[0], d[1], d[d.length - 2], d[d.length - 1]); return; }
+        if (mode === 'paint') remember(pointC); push({ b: d, r: brush / 2, c: mode === 'paint' ? pointC : null }); return;
+      }
     }
     if (q.moved || e.type === 'pointercancel') return;
     if (q.max >= 2) { if (performance.now() - q.t0 < 400) step(q.max === 2); return; }
@@ -342,6 +368,20 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   function remember(c: string) {
     setRecent(p => { const n = [c, ...p.filter(x => x !== c)].slice(0, 8); try { localStorage.setItem(RECENT_KEY, JSON.stringify(n)); } catch { } return n; });
   }
+  // gradient / tone on the region under (x0, y0): a drag sets its direction; a tap runs a gradient top to bottom
+  // over the region and lays a flat tone
+  function paintFx(x0: number, y0: number, x1?: number, y1?: number) {
+    if (!la) return;
+    const xi = Math.max(0, Math.min(W - 1, Math.round(x0))), yi = Math.max(0, Math.min(H - 1, Math.round(y0))), r = la.region[yi * W + xi];
+    let line = x1 == null ? null : { x0, y0, x1, y1: y1! };
+    if (!line && fill === 'grad') {
+      let top = H, bot = -1; for (let i = 0; i < la.region.length; i++) if (la.region[i] === r) { const y = (i / W) | 0; if (y < top) top = y; if (y > bot) bot = y; }
+      line = { x0: xi, y0: top, x1: xi, y1: Math.max(top + 1, bot) };
+    }
+    const fx: Fx = fill === 'grad' ? { k: 'grad', c2: pointC2, ...line! } : { k: 'tone', cov: cov / 100, per, ...(line || {}) };
+    if (fill === 'grad') { remember(pointC2); remember(pointC); }
+    push({ x: xi, y: yi, c: pointC, fx });
+  }
   function tap(cx: number, cy: number) {
     if (!la || !src || view === 'src') return;
     const { x, y } = imgAt(cx, cy);
@@ -352,6 +392,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       return;
     }
     if (mode === 'erase' || mode === 'join') { const j = joinAt(x, y); if (j) { push({ rm: j }); return; } if (mode === 'join') return; }
+    if (mode === 'paint' && fill !== 'solid') { paintFx(x, y); return; }
     if (mode === 'paint') remember(pointC);
     push({ x, y, c: mode === 'paint' ? pointC : null });
   }
@@ -412,6 +453,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             {mode === 'join' && Array.from({ length: la.ends.length / 4 }, (_, i) => <circle key={i} cx={la.ends[i * 4]} cy={la.ends[i * 4 + 1]} r={5 / (zv?.K || fit || 1)} />)}
             {joinsOf(ops.current).map((j, i) => <polyline key={i} className="dash" points={j.join(' ')} />)}
             {drag && (mode === 'join' ? <polyline points={drag.join(' ')} />
+              : mode === 'paint' && fill !== 'solid' ? <polyline points={[drag[0], drag[1], drag[drag.length - 2], drag[drag.length - 1]].join(' ')} />
               : <polyline className="brush" points={drag.join(' ')} style={{ stroke: mode === 'paint' ? pointC : undefined, strokeWidth: brush * (zv?.K || fit || 1) }} />)}
           </svg>}
           <AddHint hidden={!!src} formats="PNG · JPEG · WebP" />
@@ -435,10 +477,16 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
           </div>
           <div className="sec">
             <div className="prop use"><Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')], ['join', tr('つなぐ')]]} onChange={setMode} /></div>
-            <div className="prop pair"><span><Lbl>{tr('ブラシ')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="500" value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</span></div>
-            <div className="prop pair cpick"><span><Lbl>{tr('色')}</Lbl></span>
+            <div className="prop use"><Seg id="lFill" value={fill} options={[['solid', tr('ベタ')], ['grad', tr('グラデ')], ['tone', tr('トーン')]]} onChange={v => { setFill(v); setMode('paint'); }} /></div>
+            {fill === 'tone' && <>
+              <div className="prop pair"><span><Lbl>{tr('濃度')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="90" value={cov} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setCov(Math.max(1, Math.min(90, n))); }} />%</span></div>
+              <div className="prop pair"><span><Lbl>{tr('間隔')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="3" max="200" value={per} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setPer(Math.max(3, Math.min(200, n))); }} />px</span></div>
+            </>}
+            <div className="prop pair" hidden={fill !== 'solid'}><span><Lbl>{tr('ブラシ')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="500" value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</span></div>
+            <div className="prop pair cpick" hidden={fill === 'tone'}><span><Lbl>{tr('色')}</Lbl></span>
               <span className="unit">
                 <input type="color" className="col" aria-label={tr('色')} value={pointC} onChange={e => usePoint(e.target.value)} />
+                {fill === 'grad' && <input type="color" className="col" id="lCol2" aria-label={tr('色') + ' 2'} value={pointC2} onChange={e => { setPointC2(e.target.value); setMode('paint'); }} />}
                 <button className="ib" id="lPick" aria-label={tr('スポイト')} title={tr('スポイト')} aria-pressed={mode === 'pick'} onClick={() => setMode(mode === 'pick' ? 'paint' : 'pick')}>
                   <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10.5 2.5l3 3M9 4l3 3M11.2 5.8L5 12l-2.5.8.8-2.5 6.2-6.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
                 </button>
