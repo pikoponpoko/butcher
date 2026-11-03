@@ -12,7 +12,7 @@ import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 
 export type Pane = 'layer' | 'slice';
 const INIT: Settings = {
-  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true, slTrim: false, slIso: false,
+  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true, slTrim: true, slIso: false,
   prefix: '', suffix: '', hidden: false, tree: true, slFill: true, allFiles: false, incWarn: false, out: 'zip',
 };
 
@@ -87,7 +87,19 @@ export function useImageTool() {
   // a document made elsewhere (the 線画 tool's layers)
   function addDoc(name: string, psd: Parameters<typeof makeDoc>[1]) {
     if (job.current) return;
-    docs.push(makeDoc(name, psd)); setCur(docs.length - 1); setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
+    // sent again: replaces the earlier copy and keeps its slices
+    const d = makeDoc(name, psd), i = docs.findIndex(x => x.fromLine && x.name === name);
+    d.fromLine = true;
+    if (i >= 0) { const o = docs[i]; if (o.psd.width === psd.width && o.psd.height === psd.height) { d.slices = o.slices; d.sliceSel = o.sliceSel; } docs[i] = d; setCur(i); }
+    else { docs.push(d); setCur(docs.length - 1); }
+    // first time: sliced per drawing right away
+    if (!d.slices.length && psd.imageData) {
+      const found = detectSlices(psd.imageData.data as Uint8ClampedArray, psd.width, psd.height);
+      for (const p of found) d.slices.push({ id: newSliceId(), name: nextSliceName(d), ...p, on: true });
+      d.sliceSel = d.slices[0]?.id ?? null;
+      if (found.length) { persistSlices(d); if (found.drawings) setO(p => ({ ...p, slIso: true, slTrim: true })); }
+    }
+    setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
   function closeDoc(i: number) {
