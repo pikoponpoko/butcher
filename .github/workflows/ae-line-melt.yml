@@ -1,0 +1,88 @@
+name: AE Line Melt
+on:
+  pull_request:
+    paths: ['ae-line-melt/**', '.github/workflows/ae-line-melt.yml']
+  workflow_dispatch:
+    inputs:
+      release:
+        description: GitHub Releases に公開する（タグ line-melt-v<version>、Latest にはしない）
+        type: boolean
+        default: true
+permissions:
+  contents: write
+defaults:
+  run:
+    working-directory: ae-line-melt
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test --release
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release
+      - shell: bash
+        run: |
+          mkdir -p out
+          cp target/release/line_melt.dll out/LineMelt.aex
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LineMelt-Windows
+          path: ae-line-melt/out/LineMelt.aex
+  mac:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          set -e
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+          B=out/LineMelt.plugin/Contents
+          mkdir -p $B/MacOS $B/Resources
+          lipo target/{x86_64,aarch64}-apple-darwin/release/libline_melt.dylib -create -output $B/MacOS/LineMelt
+          cp target/aarch64-apple-darwin/release/line_melt.rsrc $B/Resources/LineMelt.rsrc
+          printf 'eFKTFXTC' > $B/PkgInfo
+          cat > $B/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleIdentifier</key><string>com.pikoponpoko.LineMelt</string>
+            <key>CFBundleExecutable</key><string>LineMelt</string>
+            <key>CFBundleName</key><string>LineMelt</string>
+            <key>CFBundlePackageType</key><string>eFKT</string>
+            <key>CFBundleSignature</key><string>FXTC</string>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint $B/Info.plist
+          codesign --force --deep --sign - out/LineMelt.plugin
+          cd out && ditto -c -k --keepParent LineMelt.plugin LineMelt-Mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LineMelt-Mac
+          path: ae-line-melt/out/LineMelt-Mac.zip
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          cd ..
+          gh release create "line-melt-v$V" --latest=false --title "Line Melt $V (After Effects)" \
+            --notes-file ae-line-melt/INSTALL.md \
+            dist/LineMelt-Windows/LineMelt.aex dist/LineMelt-Mac/LineMelt-Mac.zip
