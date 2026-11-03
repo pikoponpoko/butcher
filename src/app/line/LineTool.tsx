@@ -357,15 +357,14 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   const live = useRef(0); // points in the sweep being previewed
   const sweeping = () => (mode === 'paint' || mode === 'erase') && (stroke === 'area' || (mode === 'paint' && fill !== 'solid'));
   // the regions a traced path crosses, one point each (taken off the line ink, so brushing past a line doesn't
-  // reach over it); the paper outside the drawing only when the path starts there.
+  // reach over it). The paper outside the drawing stays transparent.
   // gradient / tone run from the start to the end of the path across all of them
   function sweepOf(d: number[]): Sweep | null {
     if (!la) return null;
     const seen = new Set<number>(), g: number[] = [];
     const visit = (x: number, y: number) => {
       const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= W || yi >= H) return;
-      const i = yi * W + xi, r = la.region[i]; if (r < 0 || seen.has(r) || la.alpha[i] >= 128) return;
-      if (la.outside[r] && g.length) return;
+      const i = yi * W + xi, r = la.region[i]; if (r < 0 || seen.has(r) || la.alpha[i] >= 128 || la.outside[r]) return;
       seen.add(r); g.push(xi, yi);
     };
     visit(d[0], d[1]);
