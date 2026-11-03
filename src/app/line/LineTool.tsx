@@ -10,7 +10,8 @@ import { tr } from '../i18n';
 import { saveFiles, saveFailText } from '../save';
 import type { Status } from '../image/exporter';
 
-export interface LineToolApi { open(f: File): void; export(): void }
+// send(): hands the finished layers to the image tool when they changed since the last send
+export interface LineToolApi { open(f: File): void; export(): void; send(): void }
 export interface LineState { open: boolean; busy: boolean }
 // history: a tap paints the region under (x, y) with `c` or erases it (null); `j` adds a join, `rm` takes one away
 // `b` is a brush stroke (points, radius `r`) that paints `c` or erases (null) pixel by pixel over the regions
@@ -426,8 +427,10 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     } catch (e: any) { setStatus([{ t: tr('エラー: {e}', { e: String(e?.message || e) }), c: 'err' }]); }
     finally { setBusy(false); }
   }
-  const toImage = () => { const L = layersNow(); if (src && L) onOpenImage(`${stem()}.psd`, layeredDoc(L, src.W, src.H)); };
-  useImperativeHandle(ref, () => ({ open, export: doExport }));
+  const sent = useRef(-1);
+  const toImage = () => { const L = layersNow(); if (src && L) { sent.current = ver; onOpenImage(`${stem()}.psd`, layeredDoc(L, src.W, src.H)); } };
+  const send = () => { if (src && la && !busy && sent.current !== ver) toImage(); };
+  useImperativeHandle(ref, () => ({ open, export: doExport, send }));
 
   const num = (k: keyof LineSettings, lo: number, hi: number) => (v: string) => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setS(p => ({ ...p, [k]: Math.max(lo, Math.min(hi, n)) })); };
   const level = (k: 'black' | 'white') => (

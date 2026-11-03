@@ -94,7 +94,7 @@ export function App() {
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : tool === 'line' ? ' tool-line' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
       <header className="bar">
-        <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')], ['line', tr('線画')]]} onChange={setTool} />
+        <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')], ['line', tr('線画')]]} onChange={v => { if (v === 'img' && tool === 'line') line.current?.send(); setTool(v); }} />
         <div className="tabs img-only" id="tabs" role="tablist">
           {t.docs.map((d, i) => (
             <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
