@@ -19,7 +19,9 @@ export interface LineState { open: boolean; busy: boolean }
 // that fades out from (x0, y0) to (x1, y1) when those are given
 export type Fx = { k: 'grad'; c2: string; x0: number; y0: number; x1: number; y1: number } | { k: 'tone'; cov: number; per: number; x0?: number; y0?: number; x1?: number; y1?: number };
 type Tap = { x: number; y: number; c: string | null; fx?: Fx };
-type Op = Tap | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null };
+// `g`: a traced sweep — one point per region it crossed (x, y, x, y…), all painted `c` (or cleared) as one step
+type Sweep = { g: number[]; c: string | null; fx?: Fx };
+type Op = Tap | Sweep | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null };
 const isTap = (o: Op): o is Tap => 'x' in o;
 // joins in effect after replaying the history
 function joinsOf(ops: Op[]) {
@@ -66,14 +68,26 @@ function getWorker() {
 // which regions get the base and which a point color, replaying the taps in order
 function paintOf(la: LineArt, ops: Op[]) {
   const point = new Map<number, { c: string; fx?: Fx }>(), flip = new Set<number>();
+  const at = (x: number, y: number) => { const r = la.region[Math.round(y) * la.W + Math.round(x)]; return r == null || r < 0 ? -1 : r; };
+  const base = (r: number) => !la.outside[r] !== flip.has(r);
   for (const o of ops) {
+    if ('g' in o) {
+      // a sweep clears without toggling: a painted region loses its color, an unpainted one its base
+      for (let i = 0; i + 1 < o.g.length; i += 2) {
+        const r = at(o.g[i], o.g[i + 1]); if (r < 0) continue;
+        if (o.c) point.set(r, { c: o.c, fx: o.fx });
+        else if (point.has(r)) point.delete(r);
+        else if (base(r)) flip.has(r) ? flip.delete(r) : flip.add(r);
+      }
+      continue;
+    }
     if (!isTap(o)) continue;
-    const r = la.region[Math.round(o.y) * la.W + Math.round(o.x)]; if (r == null || r < 0) continue;
+    const r = at(o.x, o.y); if (r < 0) continue;
     if (o.c) point.set(r, { c: o.c, fx: o.fx });
     else if (point.has(r)) point.delete(r);
     else flip.has(r) ? flip.delete(r) : flip.add(r);
   }
-  return { point, base: (r: number) => !la.outside[r] !== flip.has(r) };
+  return { point, base };
 }
 
 // brush strokes in order: 0 = untouched, 1 = erased, 2 + k = cols[k]
@@ -185,6 +199,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   const [jv, setJv] = useState(0); // bumped when the joins change
   const [drag, setDrag] = useState<number[] | null>(null); // the join or brush stroke being traced, image px
   const [brush, setBrush] = useState(16); // brush diameter, image px
+  const [stroke, setStroke] = useState<'area' | 'brush'>('area'); // what a drag does with ベタ / 消す
   const [fill, setFill] = useState<'solid' | 'grad' | 'tone'>('solid');
   const [pointC2, setPointC2] = useState('#ffffff'), [cov, setCov] = useState(20), [per, setPer] = useState(8);
   const [view, setView] = useState<'src' | 'res'>('res');
@@ -310,7 +325,10 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     } else if (drag) {
       const p = imgAt(e.clientX, e.clientY), lx = drag[drag.length - 2], ly = drag[drag.length - 1];
       if (!q.moved && Math.hypot(e.clientX - q.start.x, e.clientY - q.start.y) > 6) q.moved = true;
-      if (Math.hypot(p.x - lx, p.y - ly) * viewNow().K >= 3) setDrag([...drag, p.x, p.y]);
+      if (Math.hypot(p.x - lx, p.y - ly) * viewNow().K >= 3) {
+        const d = [...drag, p.x, p.y]; setDrag(d);
+        if (q.moved && sweeping()) { const o = sweepOf(d); if (o && o.g.length !== live.current) { live.current = o.g.length; preview(o); } }
+      }
     } else {
       const dx = e.clientX - q.start.x, dy = e.clientY - q.start.y;
       if (!q.moved && Math.hypot(dx, dy) > 8) q.moved = true;
@@ -323,11 +341,12 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     g.current = null;
     if (drag) {
       const d = drag; setDrag(null);
-      if (e.type === 'pointercancel' || q.max >= 2) return;
+      const wasLive = live.current; live.current = 0;
+      if (e.type === 'pointercancel' || q.max >= 2) { if (wasLive) repaint(); return; }
       if (mode === 'join') { addJoin(d); return; }
-      // a drag paints with the brush; a tap fills the region
+      // a drag sweeps every region it crosses (or paints with the brush); a tap fills one region
       if (q.moved) {
-        if (mode === 'paint' && fill !== 'solid') { paintFx(d[0], d[1], d[d.length - 2], d[d.length - 1]); return; }
+        if (sweeping()) { const o = sweepOf(d); if (o) { if (o.c) { if (o.fx?.k === 'grad') remember(o.fx.c2); remember(o.c); } push(o); } else if (wasLive) repaint(); return; }
         if (mode === 'paint') remember(pointC); push({ b: d, r: brush / 2, c: mode === 'paint' ? pointC : null }); return;
       }
     }
@@ -335,6 +354,32 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     if (q.max >= 2) { if (performance.now() - q.t0 < 400) step(q.max === 2); return; }
     tap(e.clientX, e.clientY);
   }
+  const live = useRef(0); // points in the sweep being previewed
+  const sweeping = () => (mode === 'paint' || mode === 'erase') && (stroke === 'area' || (mode === 'paint' && fill !== 'solid'));
+  // the regions a traced path crosses, one point each (taken off the line ink, so brushing past a line doesn't
+  // reach over it); the paper outside the drawing only when the path starts there.
+  // gradient / tone run from the start to the end of the path across all of them
+  function sweepOf(d: number[]): Sweep | null {
+    if (!la) return null;
+    const seen = new Set<number>(), g: number[] = [];
+    const visit = (x: number, y: number) => {
+      const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= W || yi >= H) return;
+      const i = yi * W + xi, r = la.region[i]; if (r < 0 || seen.has(r) || la.alpha[i] >= 128) return;
+      if (la.outside[r] && g.length) return;
+      seen.add(r); g.push(xi, yi);
+    };
+    visit(d[0], d[1]);
+    for (let i = 2; i + 1 < d.length; i += 2) {
+      const x0 = d[i - 2], y0 = d[i - 1], dx = d[i] - x0, dy = d[i + 1] - y0, n = Math.max(1, Math.ceil(Math.hypot(dx, dy)));
+      for (let k = 1; k <= n; k++) visit(x0 + dx * k / n, y0 + dy * k / n);
+    }
+    if (!g.length) return null;
+    if (mode === 'erase') return { g, c: null };
+    const line = { x0: d[0], y0: d[1], x1: d[d.length - 2], y1: d[d.length - 1] };
+    const fx: Fx | undefined = fill === 'grad' ? { k: 'grad', c2: pointC2, ...line } : fill === 'tone' ? { k: 'tone', cov: cov / 100, per, ...line } : undefined;
+    return { g, c: pointC, fx };
+  }
+  const preview = (o: Sweep) => { if (la) { shown.current = composite(la, [...ops.current, o], lineC, baseC); setVer(v => v + 1); } };
   function imgAt(cx: number, cy: number) { const r = cv.current!.getBoundingClientRect(); return { x: (cx - r.left) / r.width * W, y: (cy - r.top) / r.height * H }; }
   const isJoin = (o: Op) => 'j' in o || 'rm' in o;
   const push = (o: Op) => { ops.current.push(o); redo.current = []; if (isJoin(o)) setJv(v => v + 1); else repaint(); };
@@ -455,7 +500,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
           {src && la && view === 'res' && (mode === 'join' || mode === 'erase' || drag) && <svg className="jn" style={box} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
             {mode === 'join' && Array.from({ length: la.ends.length / 4 }, (_, i) => <circle key={i} cx={la.ends[i * 4]} cy={la.ends[i * 4 + 1]} r={5 / (zv?.K || fit || 1)} />)}
             {joinsOf(ops.current).map((j, i) => <polyline key={i} className="dash" points={j.join(' ')} />)}
-            {drag && (mode === 'join' ? <polyline points={drag.join(' ')} />
+            {drag && (mode === 'join' || (sweeping() && fill === 'solid') || mode === 'erase' && stroke === 'area' ? <polyline points={drag.join(' ')} />
               : mode === 'paint' && fill !== 'solid' ? <polyline points={[drag[0], drag[1], drag[drag.length - 2], drag[drag.length - 1]].join(' ')} />
               : <polyline className="brush" points={drag.join(' ')} style={{ stroke: mode === 'paint' ? pointC : undefined, strokeWidth: brush * (zv?.K || fit || 1) }} />)}
           </svg>}
@@ -485,7 +530,12 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
               <div className="prop pair"><span><Lbl>{tr('濃度')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="90" value={cov} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setCov(Math.max(1, Math.min(90, n))); }} />%</span></div>
               <div className="prop pair"><span><Lbl>{tr('間隔')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="3" max="200" value={per} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setPer(Math.max(3, Math.min(200, n))); }} />px</span></div>
             </>}
-            <div className="prop pair" hidden={fill !== 'solid'}><span><Lbl>{tr('ブラシ')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="500" value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</span></div>
+            <div className="prop pair" hidden={fill !== 'solid' && mode === 'paint'}><span><Lbl>{tr('なぞる')}</Lbl></span>
+              <span className="unit">
+                <Seg id="lStroke" value={stroke} options={[['area', tr('領域')], ['brush', tr('ブラシ')]]} onChange={setStroke} />
+                {stroke === 'brush' && <><DraftInput className="n" type="number" min="1" max="500" aria-label={tr('ブラシ')} value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</>}
+              </span>
+            </div>
             <div className="prop pair cpick" hidden={fill === 'tone'}><span><Lbl>{tr('色')}</Lbl></span>
               <span className="unit">
                 <input type="color" className="col" aria-label={tr('色')} value={pointC} onChange={e => usePoint(e.target.value)} />
