@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as RPointerEvent } from 'react';
 import * as PsdCore from '../../core/psdcore';
 import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe, nameOf, nextSliceName, newSliceId, pathOf, thumbOf } from './model';
-import { filesPerTarget, toCanvas, trimSlice, variantsOf } from './exporter';
+import { filesPerTarget, previewOutput, toCanvas, trimSlice, variantsOf } from './exporter';
 import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
 import { AddHint, DraftInput, Lbl, altOptions, Seg, SignRows, StatusText, ThemeRow, Toggles } from '../ui';
@@ -125,7 +125,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
     else if (matchMedia('(max-width: 640px)').matches) setFold(!fold);
   };
   return (
-    <aside className="panel layers" aria-label={tr('レイヤー')}>
+    <aside className="panel layers" aria-label={tr('レイヤー')} inert={t.busy}>
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', tr('レイヤー')], ['slice', tr('スライス')]]} onChange={pickPane} />
         <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}><Lbl>{tr('すべて')}</Lbl></button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}><Lbl other={trAlt('解除')}>{tr('解除')}</Lbl></button></span>
@@ -144,7 +144,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 type Drag = { id: number; type: 'new' | 'move' | 'resize'; s: Slice; o: { x: number; y: number; w?: number; h?: number }; p: { x: number; y: number }; h?: string; added?: boolean };
 
-export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPick: () => void }) {
+export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boolean; onPick: () => void; active: boolean }) {
   const stageRef = useRef<HTMLDivElement>(null), pvRef = useRef<HTMLCanvasElement>(null), sgRef = useRef<HTMLCanvasElement>(null);
   const sign = useSign(), [, fontBump] = useState(0);
   const [avail, setAvail] = useState({ w: 0, h: 0 });
@@ -162,6 +162,9 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
   const [view, setView] = useState<View | null>(null);
   const pinch = useRef<{ d0: number; m0: { x: number; y: number }; v0: View } | null>(null);
   const pan = useRef<{ id: number; x: number; y: number; v0: View } | null>(null);
+  // 出力: the file 選択中を保存 would write, shown instead of the editable preview
+  const [outView, setOutView] = useState(false), [out, setOut] = useState<{ url: string; w: number; h: number } | null>(null);
+  const showOut = outView && !!d;
 
   useLayoutEffect(() => {
     const s = stageRef.current!;
@@ -264,7 +267,7 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
 
   const pt = (e: RPointerEvent) => { const r = pvRef.current!.getBoundingClientRect(), q = r.width / pvRef.current!.width; return { x: (e.clientX - r.left) / q, y: (e.clientY - r.top) / q }; };
   function startDrag(id: number, target: Element, p: { x: number; y: number }) {
-    if (!d) return; const DW = d.psd.width, DH = d.psd.height;
+    if (!d || t.busy) return; const DW = d.psd.width, DH = d.psd.height;
     const hd = target.closest<HTMLElement>('.hd'), sr = target.closest<HTMLElement>('.sr');
     t.begin();
     if (hd) { const s = curSlice(d)!; drag.current = { id, type: 'resize', h: hd.dataset.h, s, o: { ...s }, p }; }
@@ -285,7 +288,7 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
     if (fit && zoom && (!slicing || !d) && e.button === 0 && touches.size <= 1 && !(e.target as Element).closest('.warnbox')) {
       pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY, v0: zoom }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); return;
     }
-    if (!slicing || !d || e.button !== 0 || (e.target as Element).closest('.warnbox')) return;
+    if (showOut || !slicing || !d || e.button !== 0 || (e.target as Element).closest('.warnbox')) return;
     if (touch) { if (touches.size === 1 && !drag.current) pend.current = { id: e.pointerId, target: e.target as Element, p: pt(e) }; e.preventDefault(); return; }
     startDrag(e.pointerId, e.target as Element, pt(e));
     e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
@@ -373,9 +376,11 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
   }
 
   useEffect(() => {
-    if (!slicing || !d) return;
+    // only while the image tool is shown: the GIF tool has its own arrow keys
+    if (!active || !slicing || !d) return;
     const key = (e: KeyboardEvent) => {
-      if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (t.busy || e.ctrlKey || e.metaKey || e.altKey || (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable))) return;
       const s = curSlice(d); if (!s) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { t.deleteSlice(); e.preventDefault(); return; }
       const m = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[e.key]; if (!m) return;
@@ -384,12 +389,26 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
     addEventListener('keydown', key); return () => removeEventListener('keydown', key);
   });
 
-  const ws = pv ? dedupe(pv.warnings.filter(w => w.type !== 'text')) : [];
   const sc = slicing ? curSlice(d) : null;
+  const scKey = sc ? `${sc.x},${sc.y},${sc.w},${sc.h}` : '';
+  useEffect(() => {
+    if (!showOut || !pv) { setOut(null); return; }
+    let stop = false, url = '';
+    const id = setTimeout(async () => {
+      const b = await previewOutput(t.o, pv.rgba, pv.W, pv.H, sc).catch(() => null); if (stop) return;
+      if (!b) { setOut(null); return; }
+      const bmp = await createImageBitmap(b).catch(() => null); if (stop) { bmp?.close(); return; }
+      url = URL.createObjectURL(b); setOut({ url, w: bmp?.width ?? 0, h: bmp?.height ?? 0 }); bmp?.close();
+    }, 120);
+    return () => { stop = true; clearTimeout(id); if (url) URL.revokeObjectURL(url); };
+  }, [showOut, pv, t.o, scKey, sc?.id, sign]);
+  const ws = pv ? dedupe(pv.warnings.filter(w => w.type !== 'text')) : [];
+  const clip = !!d && /\.clip$/i.test(d.name);
   return (
     <main className="center">
-      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '') + (d ? '' : ' pick')} id="stage" ref={stageRef} onClick={d ? undefined : onPick} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}`, '--sw': x1 - x0, '--sh': y1 - y0 } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-        <div className="cv" style={cvStyle}>
+      <div className={'stage' + (slicing ? ' slicing' : '') + (zoom ? ' zoomed' : '') + (d ? '' : ' pick')} id="stage" ref={stageRef} onClick={d ? undefined : onPick}
+        role={d ? undefined : 'button'} tabIndex={d ? undefined : 0} aria-label={d ? undefined : tr('開く')} onKeyDown={d ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } }} style={pv ? { '--ar': `${x1 - x0} / ${y1 - y0}`, '--sw': x1 - x0, '--sh': y1 - y0 } as CSSProperties : undefined} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        <div className="cv" style={cvStyle} hidden={showOut}>
           <canvas id="pv" ref={pvRef} width="1" height="1" hidden={!pv} style={fit ? { width: dw + 'px', height: dh + 'px' } : undefined} />
           <div className={'sl' + (slicing ? ' on' : '') + (round ? ' round' : '')} id="sl">
             {slicing && d && d.slices.map(s => (
@@ -406,17 +425,20 @@ export function Stage({ t, round, onPick }: { t: ImageTool; round: boolean; onPi
           <canvas className="sg" ref={sgRef} width="1" height="1" hidden={!signActive(sign) || !fit}
             style={fit ? { left: x0 * k + 'px', top: y0 * k + 'px', width: (x1 - x0) * k + 'px', height: (y1 - y0) * k + 'px' } : undefined} />
         </div>
-        <div className="warnbox" id="pvInfo" hidden={!ws.length}>
+        {showOut && out && (q => <img className="out" id="pvOut" alt="" src={out.url} style={{ width: Math.max(1, Math.floor(out.w * q)) + 'px', height: Math.max(1, Math.floor(out.h * q)) + 'px' }} />)(Math.min(avail.w / out.w, avail.h / out.h, 8))}
+        <div className="warnbox" id="pvInfo" hidden={(!ws.length && !clip) || showOut}>
+          {clip && <div>{tr('CLIP STUDIO形式は非公式対応です。検証済みは通常レイヤー・表示・不透明度・フォルダのみ')}</div>}
           {ws.map((w, i) => <div key={i}>{`${w.path}${tr('：')}${tr(WARN_JA[w.type] || w.type)}${w.detail ? tr('（{d}）', { d: w.detail }) : ''}`}</div>)}
         </div>
-        {!d && !drop && <AddHint />}
+        {!d && !drop && <AddHint formats="PSD · PSB · CLIP · PNG · JPEG · WebP · GIF · BMP" />}
         <div className="drop" id="drop" hidden={!drop}>{tr('ここにドロップ')}</div>
       </div>
       <div className="status">
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
-        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) : ''}</span>
+        <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{showOut ? (out ? `${out.w}×${out.h}` : '') : sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) : ''}</span>
         <span id="pvState">{pv && ws.length > 0 && <span className="warn">{tr('警告 {n}', { n: ws.length })}</span>}</span>
-        <button className="link" id="saveOne" disabled={!d} onClick={t.saveOne}><Lbl>{tr('保存')}</Lbl></button>
+        <Seg id="pvView" hidden={!d} value={showOut ? 'out' : 'src'} options={[['src', tr('元')], ['out', tr('出力')]]} onChange={v => setOutView(v === 'out')} />
+        <button className="link" id="saveOne" disabled={!d || t.busy} onClick={t.saveOne}><Lbl>{tr('選択中を保存')}</Lbl></button>
       </div>
     </main>
   );
@@ -431,6 +453,7 @@ export function Inspector({ t }: { t: ImageTool }) {
   return (
     <aside className="panel inspector" aria-label={tr('書き出し設定')}>
       <div className="insp">
+        <fieldset className="lock" disabled={t.busy}>
         <div className="sec">
           <div className="prop pair nl lp" hidden={!layer}><span><Lbl>{tr('方式')}</Lbl></span><Seg id="mode" value={o.mode} options={[['layer', tr('レイヤー')], ['folder', tr('フォルダ')], ['both', tr('両方')]]} onChange={v => set('mode', v)} /></div>
           <div className="prop pair nl"><span><Lbl>{tr('形式')}</Lbl></span><Seg id="fmt" disabled={sns} value={o.fmt} options={[['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['ico', 'Favicon']]} onChange={v => set('fmt', v)} /></div>
@@ -462,16 +485,20 @@ export function Inspector({ t }: { t: ImageTool }) {
           {sw('slFill', 'slFill', tr('透明部分を周囲の色で補完'), 'sp', layer)}
           {sw('allFiles', 'allFiles', tr('開いているファイルをすべて処理'))}
         </div>
+        </fieldset>
         <div className="sec">
           <ThemeRow />
         </div>
       </div>
       <div className="foot">
-        <div className="sumrow"><span id="sum" className="num">{tr('{n} ファイル', { n: t.summary.n * perTarget })}{t.summary.w > 0 && <> · <span className="warn">{tr('警告あり {n}', { n: t.summary.w })}</span></>}</span><span id="status" className="muted"><StatusText s={t.status} /></span></div>
+        <div className="sumrow"><span id="sum" className="num">{tr('{n} ファイル', { n: t.summary.n * perTarget })}{t.summary.w > 0 && <> · <span className="warn">{tr('警告あり {n}', { n: t.summary.w })}</span></>}</span><span id="status" className="muted" role="status" aria-live="polite"><StatusText s={t.status} /></span></div>
+        <div className="act" hidden={!t.big}><button className="link" id="openBig" onClick={t.openBig}><Lbl>{tr('このまま開く')}</Lbl></button></div>
+        <fieldset className="lock" disabled={t.busy}>
         {sw('incWarn', 'incWarn', tr('警告のある画像も書き出す'), undefined, !t.summary.w)}
         <div className="act">
           <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', tr('個別')], ['dir', tr('フォルダ|out')]]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
         </div>
+        </fieldset>
       </div>
     </aside>
   );

@@ -4,11 +4,12 @@ import { useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, us
 import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import type { Status } from '../image/exporter';
 import { AddHint, DraftInput, Lbl, altOptions, Pick, Seg, SignRows, StatusText, ThemeRow, Toggles } from '../ui';
-import { type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
+import { type Sign, type SignColor, contrastColor, drawSign, getSign, sampleUnder, signActive, signReady, useSign } from '../sign';
+import { fmtMem, memBudget } from '../memory';
 import { type Group, type Preset, PICKS_DEFAULT, SERVICES, VIDEO_PRESETS, X_GIF, picked, toggleId } from '../presets';
 import { tr } from '../i18n';
 import JSZip from 'jszip';
-import { encodeGif, encodeMp4, encodeWebp, gifLibNow, loadGif, webpOK, type EncodeOpts } from './encoders';
+import { encodeGif, encodeMp4, encodeWebp, gifLibNow, loadGif, webpOK, type EncodeOpts, type Frames } from './encoders';
 
 type Fmt = 'gif' | 'webp' | 'mp4';
 // output aspect: 'src' = the video's own, 'free' = width and height set separately
@@ -29,7 +30,6 @@ const TEMPLATES: Template[] = [
 ];
 const X_GIF_FRAMES = 350;
 const KEYS = ['fmt', 'w', 'h', 'ratio', 'fit', 'bg', 'fps', 'speed', 'loop', 'target', 'colors', 'q', 'picks', 'dot', 'reps'] as const;
-const MAX_BYTES = 1.2e9; // decoded RGBA kept in memory for GIF/WebP
 // ドット choices; a value saved before the list keeps its own entry
 const DOTS = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 const dotSizes = (d: number) => d > 1 && !DOTS.includes(d) ? [...DOTS, d].sort((a, b) => a - b) : DOTS;
@@ -55,10 +55,11 @@ function initState() {
 }
 type G = ReturnType<typeof initState>;
 
-export interface GifToolApi { open(f: File): void; export(): void }
+export interface GifToolApi { open(f: File): void; export(): void; cancel(): void }
+export type GifState = { open: boolean; ready: boolean; busy: boolean };
 export const isVideo = (f: File) => /^video\//.test(f.type) || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
 
-export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref: Ref<GifToolApi>; onPick: () => void; onState: (st: { open: boolean; ready: boolean }) => void }) {
+export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref: Ref<GifToolApi>; onPick: () => void; onState: (st: GifState) => void }) {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const g = useRef<G>(null as unknown as G); if (!g.current) g.current = initState();
   const s = g.current;
@@ -70,6 +71,10 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   const status = (t: string, c?: 'ok' | 'warn' | 'err') => setStatusState([{ t, c }]);
   const [avail, setAvail] = useState({ w: 0, h: 0 });
   const scrubT = useRef<number | null>(null);
+  // the running export: its cancel switch and the signature it started with (the signature is shared with the image tool)
+  const job = useRef<{ ac: AbortController; sign: Sign } | null>(null);
+  const signNow = () => job.current?.sign ?? getSign();
+  const loading = useRef(0); // open() in progress (a counter, so a newer open wins)
 
   const outW = () => s.fmt === 'mp4' ? even(s.w) : s.w, outH = () => s.fmt === 'mp4' ? even(s.h) : s.h;
   const baseFps = () => s.fps || s.srcFps || 30;
@@ -105,7 +110,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
       const k = Math.min(W / s.sw, H / s.sh), dw = s.sw * k, dh = s.sh * k;
       ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
     }
-    if (sign) drawSign(ctx, 0, 0, W, H, getSign(), s.signLock);
+    if (sign) drawSign(ctx, 0, 0, W, H, signNow(), s.signLock);
   }
   // Pixel look: draw into a canvas 1/dot the size, optionally reduce colors, then scale up without smoothing.
   // k = canvas px per output px (the preview is drawn smaller than the output).
@@ -135,7 +140,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(c, (W - dw) / 2, (H - dh) / 2, dw, dh);
     ctx.imageSmoothingEnabled = true;
-    drawSign(ctx, 0, 0, W, H, getSign(), s.signLock);
+    drawSign(ctx, 0, 0, W, H, signNow(), s.signLock);
   }
   function seek(t: number) {
     return new Promise<void>(res => {
@@ -174,7 +179,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     drawPreview(); bump(); raf.current = requestAnimationFrame(loopPreview);
   }
   function setPlaying(on: boolean) {
-    if (!s.v) return;
+    if (!s.v || s.busy) return;
     if (on) { setView('src'); v.playbackRate = s.speed; if (v.currentTime < s.start || v.currentTime >= s.end) v.currentTime = s.start; v.play().then(() => { if (!raf.current) raf.current = requestAnimationFrame(loopPreview); }).catch(() => {}); }
     else v.pause();
   }
@@ -195,6 +200,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   const sign = useSign(), signSeen = useRef(sign);
   useEffect(() => {
     if (signSeen.current === sign) return; signSeen.current = sign;
+    if (s.busy) return; // the running export keeps the signature it started with
     clearResult(); drawPreview(); signReady(sign).then(() => live.current.drawPreview());
   }, [sign]);
   // Space plays / pauses the preview unless a field has focus
@@ -433,14 +439,28 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   async function captureFrames(W: number, H: number, onFrame: (i: number, n: number, c: OffscreenCanvas, ctx: OffscreenCanvasRenderingContext2D) => void | Promise<void>) {
     const n = frameCount(), fps = effFps(), c = new OffscreenCanvas(W, H), ctx = c.getContext('2d', { willReadFrequently: true })!;
     for (let i = 0; i < n; i++) {
+      job.current?.ac.signal.throwIfAborted();
       await seek(s.start + (i + 0.5) * s.speed / fps);
       drawFrame(ctx, W, H);
       await onFrame(i, n, c, ctx);
     }
   }
+  // GIF / WebP frames. With a target size every frame is kept for the retries (n × W × H × 4 bytes);
+  // otherwise each frame is read when the encoder needs it, so only one frame is in memory at a time.
+  const heldBytes = (W: number, H: number) => frameCount() * W * H * 4;
+  function frameSource(W: number, H: number, say: (t: string) => void): Frames {
+    const fps = effFps(), c = new OffscreenCanvas(W, H), ctx = c.getContext('2d', { willReadFrequently: true })!;
+    return {
+      n: frameCount(),
+      async get(i) {
+        job.current?.ac.signal.throwIfAborted();
+        await seek(s.start + (i + 0.5) * s.speed / fps);
+        drawFrame(ctx, W, H); say(tr('フレーム取得 {i}/{n}', { i: i + 1, n: frameCount() }));
+        return ctx.getImageData(0, 0, W, H).data;
+      },
+    };
+  }
   async function grabRGBA(W: number, H: number) {
-    const n = frameCount();
-    if (n * W * H * 4 > MAX_BYTES) throw new Error(tr('範囲が長すぎるかサイズが大きすぎます。範囲・サイズ・FPSを下げてください'));
     const frames: Uint8ClampedArray[] = [];
     await captureFrames(W, H, (i, n, _c, ctx) => { status(tr('フレーム取得 {i}/{n}', { i: i + 1, n })); frames.push(ctx.getImageData(0, 0, W, H).data); });
     return frames;
@@ -448,9 +468,9 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
 
   // 'auto' signature color for a whole export: judged from 5 frames across the range so it doesn't flicker
   async function lockSignColor(W: number, H: number) {
-    const sg = getSign(); if (!signActive(sg) || sg.color !== 'auto') return undefined;
+    const sg = signNow(); if (!signActive(sg) || sg.color !== 'auto') return undefined;
     const c = new OffscreenCanvas(W, H), ctx = c.getContext('2d', { willReadFrequently: true })!, parts: Uint8ClampedArray[] = [];
-    for (let i = 0; i < 5; i++) { await seek(s.start + (s.end - s.start) * i / 4); drawFit(ctx, W, H, false); parts.push(sampleUnder(ctx, 0, 0, W, H, sg)); }
+    for (let i = 0; i < 5; i++) { job.current?.ac.signal.throwIfAborted(); await seek(s.start + (s.end - s.start) * i / 4); drawFit(ctx, W, H, false); parts.push(sampleUnder(ctx, 0, 0, W, H, sg)); }
     const all = new Uint8ClampedArray(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
     return contrastColor(all);
   }
@@ -458,36 +478,49 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   // ---------- export with target size search
   // One file at W×H in the current format; `best` is the smallest try when the target size can't be reached.
   async function encodeAt(W: number, H: number, say: (t: string) => void) {
+    const signal = job.current!.ac.signal;
     s.signLock = await lockSignColor(W, H);
     const target = s.target ? s.target * 1048576 : 0;
-    if (s.fmt === 'mp4') { const b = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), say, reps()); return { best: b, ok: !target || b.size <= target }; }
+    if (s.fmt === 'mp4') { const b = await encodeMp4(W, H, effFps(), frameCount(), s.target, cb => captureFrames(W, H, (i, n, c) => cb(i, n, c)), say, reps(), signal); return { best: b, ok: !target || b.size <= target }; }
     if (s.fmt === 'webp' && !webpOK) throw new Error(tr('このブラウザはWebP書き出しに対応していません'));
-    const eo: EncodeOpts = { fps: effFps(), loop: s.loop, useAlpha: alpha() };
+    const eo: EncodeOpts = { fps: effFps(), loop: s.loop, useAlpha: alpha(), signal };
+    if (!target) {
+      const src = frameSource(W, H, say), b = s.fmt === 'gif' ? await encodeGif(src, W, H, s.colors, 1, eo) : await encodeWebp(src, W, H, s.q / 100, 1, eo, () => {});
+      return { best: b, ok: true };
+    }
     const frames = await grabRGBA(W, H);
     // per spec: keep px, lower colors / quality first, then drop frames
     const levels = s.fmt === 'gif'
       ? [256, 128, 64, 32, 16, 8, 4].filter(c => c <= s.colors)
       : [s.q, 70, 55, 40, 25, 10].filter((q, i) => i === 0 || q < s.q);
-    const steps = target ? [1, 2, 3] : [1];
     let best: Blob | null = null, tries = 0;
-    for (const step of steps) for (const lv of target ? levels : levels.slice(0, 1)) {
+    for (const step of [1, 2, 3]) for (const lv of levels) {
       if (frames.length / step < 2 && step > 1) return { best: best!, ok: false };
       tries++; say(tr('{f}作成 {n}回目', { f: s.fmt === 'gif' ? 'GIF' : 'WebP', n: tries }));
       const b = s.fmt === 'gif' ? await encodeGif(frames, W, H, lv, step, eo) : await encodeWebp(frames, W, H, lv / 100, step, eo, say);
       if (!best || b.size < best.size) best = b;
-      if (!target || b.size <= target) return { best: b, ok: true };
+      if (b.size <= target) return { best: b, ok: true };
     }
     return { best: best!, ok: false };
   }
   async function doExport() {
-    if (!s.v || s.busy) return;
+    if (!s.v || s.busy || loading.current) return;
+    // the settings, video and signature are fixed for this export: the inspector, timeline, crop frame and
+    // opening another video are locked until it ends (finally below), and the signature is copied here
+    job.current = { ac: new AbortController(), sign: getSign() };
     s.busy = true; v.pause(); clearResult(); bump();
-    if (posterize()) await loadGif();
     try {
-      await signReady();
-      const u = use();
+      if (posterize()) await loadGif();
+      await signReady(job.current.sign);
+      const u = use(), sizes = u === 'sns' || u === 'wp' ? presetSizes() : [{ w: outW(), h: outH() }];
+      if (!sizes.length) throw new Error(tr('サイズを選んでください'));
+      // GIF / WebP with a target size keep every frame in memory: check that before starting
+      if (s.fmt !== 'mp4' && s.target) {
+        const need = Math.max(...sizes.map(z => heldBytes(z.w, z.h)));
+        if (need > memBudget()) throw new Error(tr('メモリが足りません（目安 {m}）。範囲・サイズ・FPSを下げるか、目標サイズを外してください', { m: fmtMem(need) }));
+      }
       if (u === 'sns' || u === 'wp') {
-        const sizes = presetSizes(); if (!sizes.length) throw new Error(tr('サイズを選んでください'));
+        const sizes = presetSizes();
         const zip = new JSZip(), base = s.name.replace(/\.[^.]+$/, ''), each: { name: string; data: Blob }[] = []; let over = 0;
         for (let j = 0; j < sizes.length; j++) {
           const z = sizes[j], { best, ok } = await encodeAt(z.w, z.h, t => status(`${j + 1}/${sizes.length} ${t}`));
@@ -505,9 +538,13 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
       showResult(best);
       if (!ok) { status(tr('目標 {t} MB に届きません（最小 {s}）', { t: s.target, s: fmtMB(best.size) }), 'warn'); setKeep(true); }
       else await saveResult();
-    } catch (e: any) { status(tr(String(e.message || e)), 'err'); }
-    finally { s.busy = false; s.signLock = undefined; drawPreview(); bump(); }
+    } catch (e: any) {
+      if (job.current?.ac.signal.aborted) status(tr('中止しました'));
+      else status(tr(String(e.message || e)), 'err');
+    }
+    finally { s.busy = false; s.signLock = undefined; job.current = null; drawPreview(); bump(); }
   }
+  const cancel = () => job.current?.ac.abort();
 
   // ---------- open
   // The video's frame rate isn't exposed, so play a moment and read the gap between presented frames.
@@ -531,6 +568,8 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     return Math.abs(near - f) / near < 0.015 ? near : Math.round(f * 100) / 100;
   }
   async function open(file: File) {
+    if (s.busy) return;
+    const tok = ++loading.current; bump();
     v.pause(); clearResult();
     if (s.url) URL.revokeObjectURL(s.url);
     s.url = URL.createObjectURL(file); s.name = file.name; v.src = s.url; pal.current = null;
@@ -538,17 +577,19 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
       await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error(tr('この動画は読み込めません'))); });
       if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
       s.srcFps = await measureFps();
+      if (tok !== loading.current) return; // a newer file was opened meanwhile
       s.v = true; s.dur = v.duration; s.sw = v.videoWidth; s.sh = v.videoHeight; s.start = 0; s.end = Math.min(s.dur, 6); s.crop = null; hist.current = { u: [], r: [] };
       if (s.tpl === 'custom' && locked()) { const r = ratio(); s.w = Math.min(s.w, Math.round(Math.min(s.sw, s.sh * r))); lockFromW(); }
       status('');
       bump();
       await seek(0); drawPreview(); bump();
       makeThumbs();
-    } catch (e: any) { status(String(e.message || e), 'err'); }
+    } catch (e: any) { if (tok === loading.current) status(String(e.message || e), 'err'); }
+    finally { if (tok === loading.current) { loading.current = 0; bump(); } }
   }
-  useImperativeHandle(ref, () => ({ open, export: doExport }));
-  const ready = s.v && !s.busy, stSeen = useRef('');
-  useEffect(() => { const k = `${s.v}${ready}`; if (k !== stSeen.current) { stSeen.current = k; onState({ open: s.v, ready }); } });
+  useImperativeHandle(ref, () => ({ open, export: doExport, cancel }));
+  const ready = s.v && !s.busy && !loading.current, stSeen = useRef('');
+  useEffect(() => { const k = `${s.v}${ready}${s.busy}`; if (k !== stSeen.current) { stSeen.current = k; onState({ open: s.v, ready, busy: s.busy }); } });
 
   // ---------- render
   const W = outW(), H = outH(), k = Math.min(avail.w / W, avail.h / H, 4);
@@ -564,6 +605,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     {`${sets ? tr('{n} ファイル', { n: presetSizes().length }) : `${outW()}×${outH()}`} · ${tr('{n} フレーム', { n })} · ${tr('{s}秒', { s: (clipSecs() * reps()).toFixed(2) })}${reps() > 1 ? ` · ×${reps()}` : ''}`}
     {maxFrames && n > maxFrames ? <> · <span className="warn">{tr('{n} フレームを超えています', { n: maxFrames })}</span></> : null}
     {s.fmt === 'gif' && baseFps() > 50 ? <> · <span className="warn">{tr('GIFは50fpsまで')}</span></> : null}
+    {s.fmt === 'mp4' ? ` · ${tr('音声なしで出力')}` : null}
   </> : null;
   const playIcon = v.paused
     ? <svg width="16" height="18" viewBox="0 0 16 18"><path d="M3 1v16l13-8z" fill="currentColor" /></svg>
@@ -573,7 +615,8 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   return (
     <section className={'gif' + (s.v ? ' on' : '')} id="gif">
       <main className="center" style={{ display: 'flex' }}>
-        <div className={'stage' + (s.v ? cr && show === 'pv' ? ' crop' : '' : ' pick')} id="gStage" ref={stageRef} style={s.v ? { '--sw': s.sw, '--sh': s.sh } as CSSProperties : undefined} onClick={s.v ? undefined : onPick} onPointerDown={cDown} onPointerMove={cMove} onPointerUp={cUp} onPointerCancel={cUp}>
+        <div className={'stage' + (s.v ? cr && show === 'pv' ? ' crop' : '' : ' pick')} id="gStage" ref={stageRef} onClick={s.v ? undefined : onPick} style={s.v ? { '--sw': s.sw, '--sh': s.sh } as CSSProperties : undefined}
+          role={s.v ? undefined : 'button'} tabIndex={s.v ? undefined : 0} aria-label={s.v ? undefined : tr('開く')} onKeyDown={s.v ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } }} onPointerDown={cDown} onPointerMove={cMove} onPointerUp={cUp} onPointerCancel={cUp}>
           <div className="cv" hidden={show !== 'pv' || !s.v}>
             <canvas id="gPv" ref={pv} width="1" height="1" style={crop ? cbox : box} />
             {cr && <div className="sl on" id="gCrop">
@@ -584,10 +627,10 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
           </div>
           <img id="gResI" alt="" hidden={show !== 'i' || !s.v} style={box} src={show === 'i' ? s.resUrl : undefined} />
           <video id="gResV" ref={resV} muted loop playsInline hidden={show !== 'v' || !s.v} style={box} src={s.fmt === 'mp4' && s.resUrl ? s.resUrl : undefined} />
-          <AddHint id="gEmpty" hidden={s.v} />
+          <AddHint id="gEmpty" hidden={s.v} formats="MP4 · WebM · MOV" />
         </div>
         <div className="tl">
-          <button className="play" id="gPlay" disabled={!s.v} aria-label={tr(v.paused ? '再生' : '停止')} onClick={() => setPlaying(v.paused)}>{playIcon}</button>
+          <button className="play" id="gPlay" disabled={!s.v || s.busy} aria-label={tr(v.paused ? '再生' : '停止')} onClick={() => setPlaying(v.paused)}>{playIcon}</button>
           <div className="track" id="gTrack" ref={track} onPointerDown={trackDown} onPointerMove={trackMove} onPointerUp={trackUp} onPointerCancel={trackUp}>
             <canvas id="gThumbs" ref={thumbs} />
             <div className="dim" id="gDimL" style={s.dur ? { left: '0', width: p(s.start) } : undefined} />
@@ -602,11 +645,12 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
           {cr && !showRes && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
           <span id="gOut" className="num" style={{ marginLeft: 'auto' }}>{s.result ? fmtMB(s.result.size) : ''}</span>
           <Seg id="gView" hidden={!s.result} value={s.view} options={[['src', tr('元')], ['res', tr('結果')]]} onChange={setView} />
-          <button className="link" id="gSave" hidden={!s.result} onClick={saveResult}><Lbl>{tr('保存')}</Lbl></button>
+          <button className="link" id="gSave" hidden={!s.result} disabled={s.busy} onClick={saveResult}><Lbl>{tr('保存')}</Lbl></button>
         </div>
       </main>
       <aside className="panel inspector" aria-label={tr('GIF書き出し設定')}>
         <div className="insp">
+          <fieldset className="lock" disabled={s.busy}>
           <div className="sec" id="gHeadSec">
             <div className="prop use"><Seg id="gUse" value={u} options={[['custom', tr('カスタム')], ['web', 'Web'], ['sns', tr('SNS')], ['wp', tr('壁紙')]]} onChange={setUse} /></div>
             <div className="prop" id="gFmtRow" hidden={u === 'wp'}><span><Lbl>{tr('形式')}</Lbl></span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]}
@@ -644,12 +688,13 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
               <select id="gColors" aria-label={tr('色数')} value={String(s.colors)} hidden={s.fmt !== 'gif' && !dotOn()} onChange={e => { s.colors = +e.target.value; changed(); }}>{['256', '128', '64', '32', '16', '8', '4'].map(x => <option key={x} value={x}>{tr('{n}色', { n: x })}</option>)}{altOptions([['{n}色', { n: 256 }]])}</select></span></div>
             <label className="prop pair" htmlFor="gQ" id="gQRow" hidden={s.fmt !== 'webp'}><span><Lbl>{tr('画質')}</Lbl></span><span className="unit"><DraftInput id="gQ" className="n" type="number" min="1" max="100" value={s.q} onBlur={fieldBlur} onDraft={num('q', val => Math.max(1, Math.min(100, Math.round(val))))} /></span></label>
           </div>
+          </fieldset>
           <div className="sec">
             <ThemeRow />
           </div>
         </div>
         <div className="foot">
-          <div className="sumrow"><span id="gSum" className="num">{sum}</span><span id="gStatus" className="muted"><StatusText s={statusLine} /></span></div>
+          <div className="sumrow"><span id="gSum" className="num">{sum}</span><span id="gStatus" className="muted" role="status" aria-live="polite"><StatusText s={statusLine} /></span></div>
           <div className="act" hidden={!keep}><button className="link" id="gKeep" onClick={() => { setKeep(false); saveResult(); }}><Lbl>{tr('このまま保存')}</Lbl></button></div>
         </div>
       </aside>

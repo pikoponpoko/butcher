@@ -2,7 +2,11 @@
 // animated WebP here, WebCodecs + mp4-muxer (MP4). Libraries load on first export.
 import { tr } from '../i18n';
 
-export interface EncodeOpts { fps: number; loop: number; useAlpha: boolean }
+export interface EncodeOpts { fps: number; loop: number; useAlpha: boolean; signal?: AbortSignal }
+// Frames held in memory, or read one at a time (n frames, get(i) returns frame i; it may be called again for the same i).
+export type Frames = Uint8ClampedArray[] | { n: number; get(i: number): Promise<Uint8ClampedArray> | Uint8ClampedArray };
+const countOf = (f: Frames) => Array.isArray(f) ? f.length : f.n;
+const frameOf = (f: Frames, i: number) => Array.isArray(f) ? f[i] : f.get(i);
 
 let gifLib: Promise<typeof import('gifenc')> | undefined, muxLib: Promise<typeof import('mp4-muxer')> | undefined;
 let gifNow: typeof import('gifenc') | undefined;
@@ -13,26 +17,41 @@ export const gifLibNow = () => gifNow; // sync access once loaded, for per-frame
 const loadMux = () => muxLib ||= import('mp4-muxer').catch(() => { muxLib = undefined; return stale(); });
 
 // ---------- GIF
-export async function encodeGif(frames: Uint8ClampedArray[], W: number, H: number, colors: number, step: number, o: EncodeOpts) {
+// Frame i of a clip of n frames at fps starts at i / fps. GIF delays are whole centiseconds (WebP: ms), so each kept
+// frame (every `step`th) lasts from its start to the next kept frame's start (the last one to the clip's end), both
+// rounded on the shared timeline: rounding never adds up and the file plays exactly n / fps seconds.
+export function frameDelays(n: number, fps: number, step: number, unit: number) {
+  const at = (i: number) => Math.round(Math.min(i, n) / fps * 1000 / unit), out: number[] = [];
+  for (let i = 0; i < n; i += step) out.push(at(i + step) - at(i));
+  return out;
+}
+export async function encodeGif(frames: Frames, W: number, H: number, colors: number, step: number, o: EncodeOpts, progress?: (i: number, n: number) => void) {
   const { GIFEncoder, quantize, applyPalette } = await loadGif();
-  const useAlpha = o.useAlpha, delay = 1000 / o.fps * step;
-  const pick = frames.filter((_, i) => i % step === 0);
-  // one global palette from a sample of frames keeps colors stable and the file small
+  const n = countOf(frames), useAlpha = o.useAlpha, delays = frameDelays(n, o.fps, step, 10);
+  const pick = Array.from({ length: Math.ceil(n / step) }, (_, i) => i * step);
+  // one global palette from a sample of frames keeps colors stable and the file small.
+  // One slot is always kept free: the transparent color (透明) or the "unchanged" marker for frame deltas,
+  // so the palette never exceeds 256 entries whether or not transparent pixels show up in the sample.
   const sampleN = Math.min(pick.length, 8), per = Math.max(1, Math.floor(W * H / 60000));
   const sample = new Uint8ClampedArray(sampleN * Math.ceil(W * H / per) * 4); let off = 0;
-  for (let s = 0; s < sampleN; s++) { const f = pick[Math.floor(s * pick.length / sampleN)]; for (let p = 0; p < W * H; p += per) { sample.set(f.subarray(p * 4, p * 4 + 4), off); off += 4; } }
-  const fmt = useAlpha ? 'rgba4444' : 'rgb565';
-  const pal: number[][] = quantize(sample.subarray(0, off), useAlpha ? colors : colors - 1, useAlpha ? { format: fmt, oneBitAlpha: true } : { format: fmt });
-  let tIdx = -1;
-  if (useAlpha) { tIdx = pal.findIndex(c => c[3] === 0); if (tIdx < 0) { pal.push([0, 0, 0, 0]); tIdx = pal.length - 1; } }
-  const full = useAlpha ? pal : pal.concat([[0, 0, 0]]); // extra entry = "unchanged" marker for frame deltas
+  for (let s = 0; s < sampleN; s++) {
+    o.signal?.throwIfAborted();
+    const f = await frameOf(frames, pick[Math.floor(s * pick.length / sampleN)]);
+    for (let p = 0; p < W * H; p += per) { if (useAlpha && f[p * 4 + 3] < 128) continue; sample.set(f.subarray(p * 4, p * 4 + 4), off); off += 4; }
+  }
+  const pal: number[][] = off ? quantize(sample.subarray(0, off), Math.max(1, Math.min(256, colors) - 1), { format: 'rgb565' }) : [[0, 0, 0]];
+  const T = pal.length, full = pal.concat([[0, 0, 0]]);
   const enc = GIFEncoder(); let prev: Uint8Array | null = null;
   for (let i = 0; i < pick.length; i++) {
-    const idx = applyPalette(pick[i], pal, fmt);
-    const opt: Record<string, unknown> = { palette: i === 0 ? full : undefined, delay, repeat: o.loop === 0 ? 0 : o.loop === 1 ? -1 : o.loop - 1 };
-    if (useAlpha) Object.assign(opt, { transparent: true, transparentIndex: tIdx, dispose: 2 });
-    else {
-      const T = full.length - 1;
+    o.signal?.throwIfAborted();
+    const f = await frameOf(frames, pick[i]), idx = applyPalette(f, pal, 'rgb565');
+    progress?.(pick[i], n);
+    const opt: Record<string, unknown> = { palette: i === 0 ? full : undefined, delay: delays[i] * 10, repeat: o.loop === 0 ? 0 : o.loop === 1 ? -1 : o.loop - 1 };
+    if (useAlpha) {
+      // pixels under half alpha are transparent; each frame replaces the previous one
+      for (let p = 0; p < idx.length; p++) if (f[p * 4 + 3] < 128) idx[p] = T;
+      Object.assign(opt, { transparent: true, transparentIndex: T, dispose: 2 });
+    } else {
       if (prev) { const cur = idx.slice(); for (let p = 0; p < idx.length; p++) if (idx[p] === prev[p]) idx[p] = T; prev = cur; } else prev = idx.slice();
       if (i > 0) Object.assign(opt, { transparent: true, transparentIndex: T, dispose: 1 });
     }
@@ -56,19 +75,20 @@ function chunk(id: string, payload: Uint8Array) {
   b[4] = n & 255; b[5] = n >> 8 & 255; b[6] = n >> 16 & 255; b[7] = n >>> 24; b.set(payload, 8); return b;
 }
 const u24 = (v: number) => [v & 255, v >> 8 & 255, v >> 16 & 255];
-export async function encodeWebp(frames: Uint8ClampedArray[], W: number, H: number, q: number, step: number, o: EncodeOpts, status: (s: string) => void) {
-  const c = new OffscreenCanvas(W, H), ctx = c.getContext('2d')!, dur = Math.round(1000 / o.fps * step);
+export async function encodeWebp(frames: Frames, W: number, H: number, q: number, step: number, o: EncodeOpts, status: (s: string) => void) {
+  const n = countOf(frames), c = new OffscreenCanvas(W, H), ctx = c.getContext('2d')!, durs = frameDelays(n, o.fps, step, 1);
   const parts: Uint8Array[] = [];
   let i = 0;
-  for (let f = 0; f < frames.length; f += step) {
-    ctx.putImageData(new ImageData(frames[f] as Uint8ClampedArray<ArrayBuffer>, W, H), 0, 0);
+  for (let f = 0; f < n; f += step) {
+    o.signal?.throwIfAborted();
+    ctx.putImageData(new ImageData(await frameOf(frames, f) as Uint8ClampedArray<ArrayBuffer>, W, H), 0, 0);
     const u8 = new Uint8Array(await (await c.convertToBlob({ type: 'image/webp', quality: q })).arrayBuffer()), ch = riffChunks(u8);
     const data = ch['VP8 '] ? [ch.ALPH, ch['VP8 ']].filter(Boolean) : [ch.VP8L];
-    const hdr = new Uint8Array([0, 0, 0, 0, 0, 0, ...u24(W - 1), ...u24(H - 1), ...u24(dur), 0b10]);
+    const hdr = new Uint8Array([0, 0, 0, 0, 0, 0, ...u24(W - 1), ...u24(H - 1), ...u24(durs[i]), 0b10]);
     const len = data.reduce((a, d) => a + d.length, hdr.length), pay = new Uint8Array(len); let off = 0;
     pay.set(hdr, off); off += hdr.length; for (const d of data) { pay.set(d, off); off += d.length; }
     parts.push(chunk('ANMF', pay));
-    if (++i % 4 === 0) status(tr('WebP作成 {i}/{n}', { i: f + 1, n: frames.length }));
+    if (++i % 4 === 0) status(tr('WebP作成 {i}/{n}', { i: f + 1, n }));
   }
   const vp8x = chunk('VP8X', new Uint8Array([0x02 | 0x10, 0, 0, 0, ...u24(W - 1), ...u24(H - 1)]));
   const loops = o.loop === 0 ? 0 : o.loop;
@@ -81,7 +101,7 @@ export async function encodeWebp(frames: Uint8ClampedArray[], W: number, H: numb
 // ---------- MP4 (H.264 via WebCodecs), streamed so long clips don't sit in memory
 // reps > 1: the clip's encoded frames are written again back to back (MP4 has no loop flag).
 export async function encodeMp4(W: number, H: number, fps: number, n: number, targetMB: number,
-  capture: (onFrame: (i: number, n: number, c: OffscreenCanvas) => Promise<void>) => Promise<void>, status: (s: string) => void, reps = 1) {
+  capture: (onFrame: (i: number, n: number, c: OffscreenCanvas) => Promise<void>) => Promise<void>, status: (s: string) => void, reps = 1, signal?: AbortSignal) {
   if (typeof VideoEncoder === 'undefined') throw new Error(tr('このブラウザはMP4書き出しに対応していません'));
   const M = await loadMux(), secs = n / fps * reps;
   const bitrate = targetMB ? Math.max(100e3, targetMB * 8 * 1048576 / secs * 0.95) : Math.max(1e6, Math.min(20e6, W * H * fps * 0.12));
@@ -102,14 +122,18 @@ export async function encodeMp4(W: number, H: number, fps: number, n: number, ta
     error: e => { err = e; },
   });
   enc.configure(config);
-  await capture(async (i, n, c) => {
-    if (err) throw err;
-    status(tr('MP4作成 {i}/{n}', { i: i + 1, n }));
-    const fr = new VideoFrame(c, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
-    enc.encode(fr, { keyFrame: i % Math.round(fps * 2) === 0 }); fr.close();
-    while (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));
-  });
-  await enc.flush(); if (err) throw err; enc.close();
+  // the encoder is closed on cancel / errors too, so a new export can start right away
+  try {
+    await capture(async (i, n, c) => {
+      if (err) throw err;
+      signal?.throwIfAborted();
+      status(tr('MP4作成 {i}/{n}', { i: i + 1, n }));
+      const fr = new VideoFrame(c, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(fr, { keyFrame: i % Math.round(fps * 2) === 0 }); fr.close();
+      while (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));
+    });
+    await enc.flush(); if (err) throw err;
+  } finally { if (enc.state !== 'closed') enc.close(); }
   // each pass starts on the clip's first frame, which is a key frame
   for (let r = 1; r < reps; r++) { const off = Math.round(r * n * 1e6 / fps); for (const k of kept) muxer.addVideoChunkRaw(k.data, k.type, k.ts + off, k.dur); }
   muxer.finalize();
