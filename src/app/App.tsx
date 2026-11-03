@@ -3,11 +3,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useImageTool } from './image/useImageTool';
 import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { GifTool, isVideo, type GifState, type GifToolApi } from './gif/GifTool';
+import { LINE_RE, LineTool, type LineState, type LineToolApi } from './line/LineTool';
 import { Lbl, Seg, Swap } from './ui';
 import { setLang, tr, useLang } from './i18n';
-import { IMG_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
+import { IMG_ACCEPT, LINE_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
 
-type Tool = 'img' | 'gif';
+type Tool = 'img' | 'gif' | 'line';
 
 declare global { interface Window { butcherDesktop?: { version: string; checkUpdate(): Promise<'latest' | 'opened'> } } }
 
@@ -29,8 +30,8 @@ export function App() {
   const [tool, setTool] = useState<Tool>('img');
   const [round, setRound] = useState(false);
   const [fold, setFold] = useState(false);
-  const gif = useRef<GifToolApi>(null);
-  const live = useRef({ t, setTool, gifBusy: false }); live.current = { t, setTool, gifBusy: false };
+  const gif = useRef<GifToolApi>(null), line = useRef<LineToolApi>(null);
+  const live = useRef({ t, tool, setTool, gifBusy: false }); live.current = { t, tool, setTool, gifBusy: false };
 
   const appRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +66,9 @@ export function App() {
     const vid = files.find(isVideo);
     if (vid && live.current.gifBusy) return;
     if (vid) { live.current.setTool('gif'); gif.current?.open(vid); return; }
+    // the 線画 tool takes one plain image
+    const ln = live.current.tool === 'line' && files.find(f => LINE_RE.test(f.name));
+    if (ln) { line.current?.open(ln); return; }
     const fs = files.filter(live.current.t.accepts); if (fs.length) { live.current.setTool('img'); live.current.t.openFiles(fs); }
   };
   useEffect(() => { takeShared().then(fs => { if (fs.length) openAny(fs); }, () => {}); }, []);
@@ -79,16 +83,18 @@ export function App() {
     return () => { removeEventListener('dragenter', enter); removeEventListener('dragover', over); removeEventListener('drop', drop); };
   }, []);
 
-  const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null), lFileRef = useRef<HTMLInputElement>(null);
+  const pickLine = () => pickFiles('butcher-line', LINE_ACCEPT, false, lFileRef.current, fs => { if (fs[0]) line.current?.open(fs[0]); });
+  const [lineSt, setLineSt] = useState<LineState>({ open: false, busy: false });
   const pickVideo = () => pickFiles('butcher-video', VIDEO_ACCEPT, false, gFileRef.current, fs => { if (fs[0]) gif.current?.open(fs[0]); });
   const pickImages = () => pickFiles('butcher-image', IMG_ACCEPT, true, fileRef.current, fs => t.openFiles(fs));
   const [gifSt, setGifSt] = useState<GifState>({ open: false, ready: false, busy: false });
   live.current.gifBusy = gifSt.busy;
 
   return (
-    <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
+    <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : tool === 'line' ? ' tool-line' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
       <header className="bar">
-        <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')]]} onChange={setTool} />
+        <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')], ['line', tr('線画')]]} onChange={setTool} />
         <div className="tabs img-only" id="tabs" role="tablist">
           {t.docs.map((d, i) => (
             <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
@@ -103,12 +109,15 @@ export function App() {
           {window.butcherDesktop && <UpdateLink />}
           <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></button>
           <button className="btn img-only" id="add" onClick={pickImages}><Swap labels={['開く', '追加']} at={t.docs.length ? 1 : 0} /></button>
+          <button className="btn line-only" id="lAdd" disabled={lineSt.busy} onClick={pickLine}><Swap labels={['開く', '追加']} at={0} /></button>
           <button className="btn gif-only" id="gAdd" disabled={gifSt.busy} onClick={pickVideo}><Swap labels={['開く', '追加']} at={gifSt.open ? 1 : 0} /></button>
           {/* while an export runs the same button cancels it */}
           <button className="btn primary img-only" id="export" disabled={!t.busy && !t.doc} onClick={t.busy ? t.cancel : t.doExport}><Swap labels={['一括書き出し', '中止']} at={t.busy ? 1 : 0} /></button>
           <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready && !gifSt.busy} onClick={() => gifSt.busy ? gif.current?.cancel() : gif.current?.export()}><Swap labels={['書き出し', '中止']} at={gifSt.busy ? 1 : 0} /></button>
+          <button className="btn primary line-only" id="lExport" disabled={!lineSt.open || lineSt.busy} onClick={() => line.current?.export()}><Swap labels={['書き出し', '中止']} at={0} /></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
+          <input ref={lFileRef} id="lFile" className="fi" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) line.current?.open(f); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
         </div>
       </header>
@@ -116,6 +125,7 @@ export function App() {
       <Stage t={t} round={round} onPick={pickImages} active={tool === 'img'} />
       <Inspector t={t} />
       <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} onState={setGifSt} />
+      <LineTool active={tool === 'line'} ref={line} onPick={pickLine} onState={setLineSt} onOpenImage={(name, psd) => { t.addDoc(name, psd); setTool('img'); }} />
     </div>
   );
 }

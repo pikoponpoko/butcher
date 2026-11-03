@@ -57,7 +57,7 @@ export async function openFile(name: string, buf: ArrayBuffer, force = false): P
   if (buf.byteLength >= 26) { const v = new DataView(buf); checkSize(v.getUint32(18), v.getUint32(14), force); }
   return makeDoc(name, readPsd(buf, { useImageData: true }) as PsdDoc);
 }
-function makeDoc(name: string, psd: PsdDoc): Doc {
+export function makeDoc(name: string, psd: PsdDoc): Doc {
   let id = 0; const checked = new Set<number>();
   (function tag(ch: PsdNode[] | undefined, par: Node | null) { for (const n of (ch || []) as Node[]) { n._id = ++id; n._parent = par; checked.add(n._id); tag(n.children, n); } })(psd.children, null);
   return { name, psd: psd as Doc['psd'], checked, slices: loadSlicesLocal(name, psd), sliceSel: null };
