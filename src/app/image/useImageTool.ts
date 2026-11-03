@@ -85,7 +85,8 @@ export function useImageTool() {
     bump();
   }
   // a document made elsewhere (the 線画 tool's layers). Each send starts the slices over: auto slices per drawing
-  // and the slice settings back to their defaults.
+  // and the slice settings back to their defaults, except the fill: the line layers are clear outside the drawing
+  // and the fill would paint that the line color.
   function addDoc(name: string, psd: Parameters<typeof makeDoc>[1]) {
     if (job.current) return;
     const d = makeDoc(name, psd), i = docs.findIndex(x => x.fromLine && x.name === name);
@@ -99,7 +100,7 @@ export function useImageTool() {
     for (const p of found) d.slices.push({ id: newSliceId(), name: nextSliceName(d), ...p, on: true });
     d.sliceSel = d.slices[0]?.id ?? null;
     persistSlices(d);
-    setO(p => ({ ...p, slTrim: INIT.slTrim, slIso: found.drawings ? true : INIT.slIso, slFill: INIT.slFill }));
+    setO(p => ({ ...p, slTrim: INIT.slTrim, slIso: found.drawings ? true : INIT.slIso, slFill: false }));
     setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
