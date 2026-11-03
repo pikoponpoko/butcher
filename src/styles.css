@@ -121,7 +121,8 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .warnbox { position: absolute; left: 12px; right: 12px; top: 12px; display: grid; gap: 2px; padding: 8px 10px; border-radius: 3px; background: var(--panel); border: 1px solid var(--warn); color: var(--warn); max-height: 40%; overflow: auto; }
 .status { height: 29px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); white-space: nowrap; overflow: hidden; }
 .status #pvName { color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.status #gName { overflow: hidden; text-overflow: ellipsis; min-width: 0; } .status > :not(#gName):not(#pvName) { flex: none; }
+.status #gName, .status #lName { overflow: hidden; text-overflow: ellipsis; min-width: 0; } .status > :not(#gName):not(#pvName):not(#lName) { flex: none; }
+.status #lView { margin-left: auto; }
 
 .insp { overflow: auto; flex: 0 1 auto; }
 .sec { padding: 10px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
@@ -179,9 +180,10 @@ input[type="number"] { -moz-appearance: textfield; } input[type="number"]::-webk
 
 /* GIF / video tool */
 .gif { display: none; grid-row: 2 / -1; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) 288px; min-height: 0; }
-.app.tool-gif .gif { display: grid; }
-.app.tool-gif > .layers, .app.tool-gif > .center, .app.tool-gif > .inspector, .app.tool-gif .img-only { display: none !important; }
-.app:not(.tool-gif) .gif-only { display: none !important; }
+.app.tool-gif .gif:not(.line), .app.tool-line .gif.line { display: grid; }
+.app.tool-gif > .layers, .app.tool-gif > .center, .app.tool-gif > .inspector, .app.tool-gif .img-only,
+.app.tool-line > .layers, .app.tool-line > .center, .app.tool-line > .inspector, .app.tool-line .img-only { display: none !important; }
+.app:not(.tool-gif) .gif-only, .app:not(.tool-line) .line-only { display: none !important; }
 .bar-r { margin-left: auto; }
 .gif .stage video, .gif .stage img { display: block; background-color: var(--chk-a);
   background-image: conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: 12px 12px; }
@@ -308,8 +310,8 @@ input[type="number"] { -moz-appearance: textfield; } input[type="number"]::-webk
   .app { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); background: var(--panel); }
   .app.typing { padding-bottom: 0; }
   .app::after { content: ""; position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: calc(56px + env(safe-area-inset-bottom, 0px)); background: var(--panel); border-top: 1px solid var(--line); }
-  #export, #gExport { position: fixed; z-index: 31; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); height: 35px; justify-content: center; }
-  .app.typing::after, .app.typing #export, .app.typing #gExport { visibility: hidden; }
+  #export, #gExport, #lExport { position: fixed; z-index: 31; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); height: 35px; justify-content: center; }
+  .app.typing::after, .app.typing #export, .app.typing #gExport, .app.typing #lExport { visibility: hidden; }
 
   /* layers header: switch on its own row, actions under it */
   .layers .ph { height: auto; flex-wrap: wrap; padding: 4px 12px 0; }
@@ -322,17 +324,17 @@ input[type="number"] { -moz-appearance: textfield; } input[type="number"]::-webk
   .layers:not(:has(.tree, .slist)) .ph { padding-bottom: 4px; }
 
   /* preview height follows the source proportions */
-  #stage, #gStage { flex: none; aspect-ratio: auto; max-height: none; padding: 10px; height: 221px; }
-  #stage[style*="--sw"], #gStage[style*="--sw"] { height: round(clamp(161px, calc((100vw - 20px) * var(--sh) / var(--sw) + 20px), 340px), 1px); }
+  #stage, #gStage, #lStage { flex: none; aspect-ratio: auto; max-height: none; padding: 10px; height: 221px; }
+  #stage[style*="--sw"], #gStage[style*="--sw"], #lStage[style*="--sw"] { height: round(clamp(161px, calc((100vw - 20px) * var(--sh) / var(--sw) + 20px), 340px), 1px); }
   .gif { grid-template-rows: auto auto; }
 
   /* status: name and save on the first line, size and warnings on the second */
   .status { height: auto; min-height: 29px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; grid-auto-rows: 16px; row-gap: 4px; column-gap: 12px; padding: 6px 8px 6px 12px; }
   .status > .link, .status > #gSave { grid-column: 4; grid-row: 1 / span 2; align-self: center; }
-  #pvName, #gName { grid-column: 1 / 4; grid-row: 1; }
-  #pvSize, #gCropInfo { grid-column: 1; grid-row: 2; margin-left: 0 !important; overflow: hidden; text-overflow: ellipsis; }
-  #pvState, #gOut { grid-column: 2; grid-row: 2; margin-left: 0 !important; }
-  #gView, #pvView { grid-column: 3; grid-row: 2; align-self: center; }
+  #pvName, #gName, #lName { grid-column: 1 / 4; grid-row: 1; }
+  #pvSize, #gCropInfo, #lSize { grid-column: 1; grid-row: 2; margin-left: 0 !important; overflow: hidden; text-overflow: ellipsis; }
+  #pvState, #gOut, #lState { grid-column: 2; grid-row: 2; margin-left: 0 !important; }
+  #gView, #pvView, #lView { grid-column: 3; grid-row: 2; align-self: center; }
 
   /* ratio: four per row */
   .gif #gHeadSec > #gRatioRow .seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -348,3 +350,35 @@ input[type="number"] { -moz-appearance: textfield; } input[type="number"]::-webk
 /* settings locked while an export runs */
 fieldset.lock { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
 fieldset.lock:disabled .prop input, fieldset.lock:disabled .prop select, fieldset.lock:disabled .pickb, fieldset.lock:disabled .prop.sw { opacity: .5; }
+
+/* 線画 tool */
+#lStage:not(.pick) { touch-action: none; cursor: crosshair; }
+#lStage.zoomed { overflow: hidden; }
+#lStage canvas { image-rendering: auto; }
+.line .prop.lvrow { grid-template-columns: 72px minmax(0, 1fr); }
+.lv { display: grid; grid-template-columns: minmax(0, 1fr) 48px; align-items: center; gap: 8px; min-width: 0; }
+.lv input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
+.line .lv input.n { width: 48px; }
+.prop input.col { width: 64px; height: 24px; padding: 2px; box-sizing: border-box; background: var(--field); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; }
+.prop input.col::-webkit-color-swatch-wrapper { padding: 0; } .prop input.col::-webkit-color-swatch { border: 0; border-radius: 1px; }
+.prop input.col::-moz-color-swatch { border: 0; border-radius: 1px; }
+#lStage > canvas, #lStage > svg.jn { grid-area: 1 / 1; }
+#lStage.zoomed > svg.jn { position: absolute; }
+svg.jn { pointer-events: none; overflow: visible; }
+svg.jn polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+svg.jn polyline.dash { stroke-dasharray: 4 4; }
+svg.jn polyline.brush { stroke: var(--muted); opacity: .6; }
+svg.jn circle { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ib { width: 24px; height: 24px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: var(--field); color: var(--muted); border-radius: 2px; cursor: pointer; padding: 0; box-sizing: border-box; }
+.ib[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.prop.recent { grid-template-columns: 72px minmax(0, 1fr); }
+.sws { display: flex; flex-wrap: wrap; gap: 4px; }
+.swc { width: 20px; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: 2px; cursor: pointer; box-sizing: border-box; }
+.swc[aria-pressed="true"] { outline: 1px solid var(--fg); outline-offset: 1px; }
+@media (max-width: 1100px) {
+  .line .insp .sec > .prop.lvrow { grid-template-columns: 44px minmax(0, 1fr); }
+  .line .insp .sec > .prop.use { grid-template-columns: minmax(0, 1fr); }
+  .line .insp .prop.pair > input.col, .line .insp .prop.cpick input.col { width: 100%; min-width: 48px; justify-self: stretch; }
+  .line .insp .prop.cpick > .unit { display: flex; min-width: 0; }
+  .line .insp .sec > .prop.recent { grid-template-columns: 44px minmax(0, 1fr); }
+}

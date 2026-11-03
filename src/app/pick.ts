@@ -15,6 +15,7 @@ export async function pickFiles(id: string, accept: Accept, multiple: boolean, i
 }
 
 export const IMG_ACCEPT: Accept = { 'image/*': ['.psd', '.psb', '.clip', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'], 'application/pdf': ['.pdf'] };
+export const LINE_ACCEPT: Accept = { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'] };
 export const VIDEO_ACCEPT: Accept = { 'video/*': ['.mp4', '.webm', '.mov', '.m4v'] };
 
 // Files shared to the installed app (Android: ギャラリー → 共有 → Butcher). The service worker keeps them in a cache.
