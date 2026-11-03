@@ -2,7 +2,7 @@
 // `bump()` re-renders after an in-place change.
 import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import { type Doc, type Node, type Slice, type Snap, SRC_RE, TooLarge, hiddenKey, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sliceData, stem, summarize } from './model';
-import { type Rect, detectPanels } from './panels';
+import { type Rect, detectSlices } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
 import { tr } from '../i18n';
@@ -11,7 +11,7 @@ import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 
 export type Pane = 'layer' | 'slice';
 const INIT: Settings = {
-  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true, slTrim: false,
+  mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true, slTrim: false, slIso: false,
   prefix: '', suffix: '', hidden: false, tree: true, slFill: true, allFiles: false, incWarn: false, out: 'zip',
 };
 
@@ -106,18 +106,20 @@ export function useImageTool() {
     if (!doc || !doc.slices.length) return;
     edit(() => { doc.slices = []; doc.sliceSel = null; });
   }
-  // one slice per detected panel frame, in reading order; panels that already have a slice are skipped
+  // one slice per detected panel frame (or per drawing on a sheet of drawings), in order; panels that already have a slice are skipped
   function autoSlice() {
     if (!doc) return;
     const W = doc.psd.width, H = doc.psd.height, r = preview && !sel && preview.W === W && preview.H === H ? preview : renderNode(doc, null, o.hidden);
-    const found = detectPanels(r.rgba, r.W, r.H);
-    if (!found.length) { setStatus([{ t: tr('枠が見つかりません'), c: 'warn' }]); return; }
+    const found = detectSlices(r.rgba, r.W, r.H);
+    if (!found.length) { setStatus([{ t: tr('枠や絵が見つかりません'), c: 'warn' }]); return; }
     const has = (p: Rect) => doc.slices.some(s => s.x === p.x && s.y === p.y && s.w === p.w && s.h === p.h);
     const add = found.filter(p => !has(p));
     if (add.length) edit(() => {
       for (const p of add) doc.slices.push({ id: newSliceId(), name: nextSliceName(doc), ...p, on: true });
       doc.sliceSel = doc.slices[doc.slices.length - add.length].id;
     });
+    // separate drawings on a sheet: cut each one clear of its neighbors and down to the drawing
+    if (found.drawings && add.length) setO(p => ({ ...p, slIso: true, slTrim: true }));
     setStatus([{ t: tr('{n} 件のスライスを追加', { n: add.length }), c: 'ok' }]);
   }
   async function saveSlices() {

@@ -5,10 +5,11 @@ import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import { tr } from '../i18n';
 import { type Sign, drawSign, getSign, signReady } from '../sign';
 import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
+import { isolateDrawing } from './isolate';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, makeNamer, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
-  mode: Mode; fmt: 'png' | 'jpeg' | 'webp' | 'ico'; quality: string; size: 'orig' | 'w' | 'h' | Group; picks: string[]; fits: Record<Group, Fit>; px: string; basis: 'canvas' | 'image'; trim: boolean; slTrim: boolean;
+  mode: Mode; fmt: 'png' | 'jpeg' | 'webp' | 'ico'; quality: string; size: 'orig' | 'w' | 'h' | Group; picks: string[]; fits: Record<Group, Fit>; px: string; basis: 'canvas' | 'image'; trim: boolean; slTrim: boolean; slIso: boolean;
   prefix: string; suffix: string; hidden: boolean; tree: boolean; slFill: boolean; allFiles: boolean; incWarn: boolean; out: 'zip' | 'each' | 'dir';
 }
 // Status line in the inspector footer: plain text or colored parts.
@@ -33,6 +34,23 @@ function cropPixels(rgba: Uint8ClampedArray, W: number, H: number, r: Slice, fil
 export function trimSlice(rgba: Uint8ClampedArray, W: number, H: number, r: Slice): Slice | null {
   const b = PsdCore.alphaBounds(cropPixels(rgba, W, H, r, false), r.w, r.h);
   return b && { ...r, x: r.x + b.x, y: r.y + b.y, w: b.w, h: b.h };
+}
+// A slice's pixels as exported (neighbor removal, trim, fill) and its final rect in canvas coordinates.
+export function renderSlice(o: Pick<Settings, 'slTrim' | 'slFill' | 'slIso'>, rgba: Uint8ClampedArray, W: number, H: number, r: Slice): { px: Uint8ClampedArray; r: Slice } | null {
+  if (!o.slIso) {
+    if (o.slTrim) { const t = trimSlice(rgba, W, H, r); if (!t) return null; r = t; }
+    return { px: cropPixels(rgba, W, H, r, o.slFill), r };
+  }
+  const iso = isolateDrawing(cropPixels(rgba, W, H, r, false), r.w, r.h);
+  let px = iso.px;
+  if (o.slTrim) {
+    const b = iso.clear ? PsdCore.alphaBounds(px, r.w, r.h) : iso.ink; if (!b) return null;
+    const out = new Uint8ClampedArray(b.w * b.h * 4);
+    for (let j = 0; j < b.h; j++) out.set(px.subarray(((b.y + j) * r.w + b.x) * 4, ((b.y + j) * r.w + b.x + b.w) * 4), j * b.w * 4);
+    px = out; r = { ...r, x: r.x + b.x, y: r.y + b.y, w: b.w, h: b.h };
+  }
+  if (o.slFill) fillTransparent(px, r.w, r.h);
+  return { px, r };
 }
 function fillTransparent(px: Uint8ClampedArray, w: number, h: number) {
   const bins = new Map<number, number[]>(); let any = false;
@@ -74,8 +92,7 @@ function borderColor(c: HTMLCanvasElement, x: number, y: number, w: number, h: n
 }
 async function encode(o: Settings, rgba: Uint8ClampedArray, W: number, H: number, crop?: Slice | null, ps?: Preset | null, sign: Sign = getSign()): Promise<Encoded | null> {
   let c = toCanvas(rgba, W, H), x = 0, y = 0, w = W, h = H;
-  if (crop && o.slTrim) { const t = trimSlice(rgba, W, H, crop); if (!t) return null; crop = t; }
-  if (crop) { c = toCanvas(cropPixels(rgba, W, H, crop, o.slFill), crop.w, crop.h); w = crop.w; h = crop.h; }
+  if (crop) { const s = renderSlice(o, rgba, W, H, crop); if (!s) return null; c = toCanvas(s.px, s.r.w, s.r.h); w = s.r.w; h = s.r.h; }
   else if (o.trim) { const b = PsdCore.alphaBounds(rgba, W, H); if (!b) return null; ({ x, y, w, h } = b); }
   if (o.fmt === 'ico' && !ps) return favicon(c, x, y, w, h);
   const fmt = ps ? fmtOf(o, ps) : o.fmt, fit = ps && o.fits[ps.group];

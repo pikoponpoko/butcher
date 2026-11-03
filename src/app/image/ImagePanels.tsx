@@ -2,7 +2,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as RPointerEvent } from 'react';
 import * as PsdCore from '../../core/psdcore';
 import { type Doc, type Node, type Slice, WARN_JA, clampSlice, curSlice, dedupe, nameOf, nextSliceName, newSliceId, pathOf, thumbOf } from './model';
-import { filesPerTarget, previewOutput, toCanvas, trimSlice, variantsOf } from './exporter';
+import { filesPerTarget, previewOutput, renderSlice, toCanvas, variantsOf } from './exporter';
+import { isolateDrawing } from './isolate';
 import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
 import { AddHint, DraftInput, Lbl, altOptions, Seg, SignRows, StatusText, ThemeRow, Toggles } from '../ui';
@@ -171,10 +172,26 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
     const ro = new ResizeObserver(() => { const cs = getComputedStyle(s); setAvail({ w: s.clientWidth - parseFloat(cs.paddingLeft) * 2, h: s.clientHeight - parseFloat(cs.paddingTop) * 2 }); });
     ro.observe(s); return () => ro.disconnect();
   }, []);
+  const base = useRef<{ pv: unknown; c: HTMLCanvasElement } | null>(null), shown = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   useLayoutEffect(() => {
     const c = pvRef.current!; if (!pv) return;
-    c.width = pv.W; c.height = pv.H; c.getContext('2d')!.drawImage(toCanvas(pv.rgba, pv.W, pv.H), 0, 0);
+    base.current = { pv, c: toCanvas(pv.rgba, pv.W, pv.H) }; shown.current = null;
+    c.width = pv.W; c.height = pv.H; c.getContext('2d')!.drawImage(base.current.c, 0, 0);
   }, [pv]);
+  // 隣の絵を消す: the selected slice shows its neighbors removed (redrawn shortly after a drag settles)
+  const selS = slicing && t.o.slIso && d ? curSlice(d) : null, sk = selS ? `${selS.x},${selS.y},${selS.w},${selS.h}` : '';
+  useEffect(() => {
+    const c = pvRef.current!, b = base.current; if (!pv || !b || b.pv !== pv) return;
+    const ctx = c.getContext('2d')!, old = shown.current;
+    if (old) { ctx.clearRect(old.x, old.y, old.w, old.h); ctx.drawImage(b.c, old.x, old.y, old.w, old.h, old.x, old.y, old.w, old.h); shown.current = null; }
+    if (!sk) return;
+    const [x, y, w, h] = sk.split(',').map(Number);
+    const tm = setTimeout(() => {
+      const iso = isolateDrawing(new Uint8ClampedArray(b.c.getContext('2d')!.getImageData(x, y, w, h).data), w, h);
+      ctx.putImageData(new ImageData(iso.px as Uint8ClampedArray<ArrayBuffer>, w, h), x, y); shown.current = { x, y, w, h };
+    }, drag.current ? 400 : 0);
+    return () => clearTimeout(tm);
+  }, [pv, sk]);
   useEffect(() => {
     // file drag over the window shows the drop hint on the stage
     let depth = 0;
@@ -242,6 +259,15 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
 
   // signature preview: an overlay over the fitted bounds, drawn into each box that will be exported
   const bb = pv ? PsdCore.alphaBounds(pv.rgba, pv.W, pv.H) : null;
+  // trimmed slice rects, cached per preview and settings (neighbor removal is too slow to redo every render)
+  const boxCache = useRef<{ key: unknown[]; m: Map<string, Slice | null> }>({ key: [], m: new Map() });
+  const boxOf = (s: Slice) => {
+    const key = [pv, t.o.slIso, t.o.slFill], bc = boxCache.current;
+    if (key.some((v, i) => v !== bc.key[i])) { bc.key = key; bc.m.clear(); }
+    const k = `${s.x},${s.y},${s.w},${s.h}`;
+    if (!bc.m.has(k)) bc.m.set(k, renderSlice(t.o, pv!.rgba, pv!.W, pv!.H, s)?.r ?? null);
+    return bc.m.get(k)!;
+  };
   useEffect(() => { signReady(sign).then(() => fontBump(x => x + 1)); }, [sign]);
   useLayoutEffect(() => {
     const c = sgRef.current!, on = signActive(sign) && fit > 0 && !!d;
@@ -251,7 +277,7 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
     const ctx = c.getContext('2d')!; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cw, ch);
     if (!on) return;
     ctx.setTransform(k * dpr, 0, 0, k * dpr, -x0 * k * dpr, -y0 * k * dpr);
-    const boxes = slicing ? d!.slices.filter(s => s.on).flatMap(s => !t.o.slTrim ? [s] : pv ? [trimSlice(pv.rgba, pv.W, pv.H, s)].filter(b => !!b) : []) : t.o.trim && bb ? [bb] : [{ x: 0, y: 0, w: W, h: H }];
+    const boxes = slicing ? d!.slices.filter(s => s.on).flatMap(s => !t.o.slTrim ? [s] : pv ? [boxOf(s)].filter(b => !!b) : []) : t.o.trim && bb ? [bb] : [{ x: 0, y: 0, w: W, h: H }];
     for (const b of boxes) {
       // 'auto' color: judged from the preview pixels under the text (outside the canvas counts as transparent)
       let col: '#ffffff' | '#000000' | undefined;
@@ -447,7 +473,7 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
 // ---------- right: export settings
 export function Inspector({ t }: { t: ImageTool }) {
   const { o, set } = t, layer = t.pane === 'layer', ico = o.fmt === 'ico', g = !ico && (o.size === 'sns' || o.size === 'wp') ? o.size : null, sns = g === 'sns', perTarget = filesPerTarget(o);
-  const sw = (id: string, key: 'trim' | 'slTrim' | 'hidden' | 'tree' | 'slFill' | 'allFiles' | 'incWarn', label: ReactNode, cls?: string, hidden?: boolean, onToggle?: () => void) => (
+  const sw = (id: string, key: 'trim' | 'slTrim' | 'slIso' | 'hidden' | 'tree' | 'slFill' | 'allFiles' | 'incWarn', label: ReactNode, cls?: string, hidden?: boolean, onToggle?: () => void) => (
     <label className={'sw' + (cls ? ' ' + cls : '')} htmlFor={id} hidden={hidden}>{label}<input id={id} type="checkbox" checked={o[key]} onChange={e => { set(key, e.target.checked); onToggle?.(); }} /></label>
   );
   return (
@@ -482,6 +508,7 @@ export function Inspector({ t }: { t: ImageTool }) {
         <div className="sec">
           {sw('hidden', 'hidden', tr('非表示レイヤーを含む'))}
           {sw('tree2', 'tree', tr('フォルダ階層を保持'), 'lp', !layer)}
+          {sw('slIso', 'slIso', tr('隣の絵を消す'), 'sp', layer)}
           {sw('slFill', 'slFill', tr('透明部分を周囲の色で補完'), 'sp', layer)}
           {sw('allFiles', 'allFiles', tr('開いているファイルをすべて処理'))}
         </div>
