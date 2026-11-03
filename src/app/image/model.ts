@@ -9,7 +9,7 @@ import { compositeBytes, memBudget } from '../memory';
 // Layer nodes carry UI-only fields next to the parsed data.
 export interface Node extends PsdNode { children?: Node[]; _id: number; _parent: Node | null; _rename?: string; _thumb?: string | null }
 export interface Slice { id: number; name: string; x: number; y: number; w: number; h: number; on: boolean }
-export interface Doc { name: string; psd: PsdDoc & { children?: Node[] }; checked: Set<number>; slices: Slice[]; sliceSel: number | null; isImage?: boolean; fromLine?: boolean }
+export interface Doc { name: string; psd: PsdDoc & { children?: Node[] }; checked: Set<number>; slices: Slice[]; sliceSel: number | null; isImage?: boolean; fromLine?: boolean; ink?: Uint8ClampedArray }
 export type Mode = 'layer' | 'folder' | 'both' | 'slice';
 export type ExportTarget = { kind: 'slice'; s: Slice; path: string[]; n?: undefined } | { kind: 'folder' | 'layer'; n: Node; path: string[]; s?: undefined };
 

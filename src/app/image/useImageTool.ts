@@ -13,7 +13,7 @@ import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 export type Pane = 'layer' | 'slice';
 const INIT: Settings = {
   mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true, slTrim: true, slIso: false,
-  prefix: '', suffix: '', hidden: false, tree: true, slFill: true, allFiles: false, incWarn: false, out: 'zip',
+  prefix: '', suffix: '', hidden: false, tree: true, slFill: false, allFiles: false, incWarn: false, out: 'zip',
 };
 
 export function useImageTool() {
@@ -84,21 +84,22 @@ export function useImageTool() {
     if (last) { setCur(docs.length - 1); setSel(null); if (last.isImage && pane !== 'slice') setPane('slice'); }
     bump();
   }
-  // a document made elsewhere (the 線画 tool's layers)
+  // a document made elsewhere (the 線画 tool's layers). Each send starts the slices over: auto slices per drawing
+  // and the slice settings back to their defaults.
   function addDoc(name: string, psd: Parameters<typeof makeDoc>[1]) {
     if (job.current) return;
-    // sent again: replaces the earlier copy and keeps its slices
     const d = makeDoc(name, psd), i = docs.findIndex(x => x.fromLine && x.name === name);
-    d.fromLine = true;
-    if (i >= 0) { const o = docs[i]; if (o.psd.width === psd.width && o.psd.height === psd.height) { d.slices = o.slices; d.sliceSel = o.sliceSel; } docs[i] = d; setCur(i); }
-    else { docs.push(d); setCur(docs.length - 1); }
-    // first time: sliced per drawing right away
-    if (!d.slices.length && psd.imageData) {
-      const found = detectSlices(psd.imageData.data as Uint8ClampedArray, psd.width, psd.height);
-      for (const p of found) d.slices.push({ id: newSliceId(), name: nextSliceName(d), ...p, on: true });
-      d.sliceSel = d.slices[0]?.id ?? null;
-      if (found.length) { persistSlices(d); if (found.drawings) setO(p => ({ ...p, slIso: true, slTrim: true })); }
-    }
+    d.fromLine = true; d.slices = []; d.sliceSel = null;
+    // detect on the line layer (top): the filled composite is all ink on a clear background
+    const top = psd.children?.[psd.children.length - 1]?.imageData;
+    d.ink = top && top.width === psd.width && top.height === psd.height ? top.data as Uint8ClampedArray : undefined;
+    if (i >= 0) { docs[i] = d; setCur(i); } else { docs.push(d); setCur(docs.length - 1); }
+    const src = d.ink || psd.imageData?.data as Uint8ClampedArray | undefined;
+    const found = src ? detectSlices(src, psd.width, psd.height) : [];
+    for (const p of found) d.slices.push({ id: newSliceId(), name: nextSliceName(d), ...p, on: true });
+    d.sliceSel = d.slices[0]?.id ?? null;
+    persistSlices(d);
+    setO(p => ({ ...p, slTrim: INIT.slTrim, slIso: found.drawings ? true : INIT.slIso, slFill: INIT.slFill }));
     setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
@@ -137,7 +138,7 @@ export function useImageTool() {
   // one slice per detected panel frame (or per drawing on a sheet of drawings), in order; panels that already have a slice are skipped
   function autoSlice() {
     if (!doc) return;
-    const W = doc.psd.width, H = doc.psd.height, r = preview && !sel && preview.W === W && preview.H === H ? preview : renderNode(doc, null, o.hidden);
+    const W = doc.psd.width, H = doc.psd.height, r = doc.ink ? { rgba: doc.ink, W, H } : preview && !sel && preview.W === W && preview.H === H ? preview : renderNode(doc, null, o.hidden);
     const found = detectSlices(r.rgba, r.W, r.H);
     if (!found.length) { setStatus([{ t: tr('枠や絵が見つかりません'), c: 'warn' }]); return; }
     const has = (p: Rect) => doc.slices.some(s => s.x === p.x && s.y === p.y && s.w === p.w && s.h === p.h);
