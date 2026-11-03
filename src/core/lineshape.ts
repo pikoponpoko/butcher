@@ -302,9 +302,9 @@ function brushPath(p: number[], w: number): number[] {
 }
 
 // Drag along a line: the stretch of line under the brush moves across the drag, so that its middle
-// follows the (smoothed) path. Both edges move together, so the line keeps its width; other lines inside
-// the brush stay. One pass goes `strength` of the way. Returns a new alpha; only pixels near the path change.
-export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, push: Push, strength = 0.7): Uint8Array {
+// runs smooth (its own course with the wobble taken out). Both edges move together, so the line keeps its width; other lines inside
+// the brush stay. Returns a new alpha; only pixels near the path change.
+export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, push: Push, strength = 1): Uint8Array {
   const P = brushPath(push.p, w), R = Math.max(1, push.r), out = alpha.slice(), K = P.length / 2;
   if (K < 2) return out;
   let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
@@ -335,7 +335,20 @@ export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, pus
     const A = a >= 0 ? a : b, B = b < K ? b : a, f = A === B ? 0 : (k - A) / (B - A);
     c[k] = c[A] * (1 - f) + c[B] * f; h[k] = h[A] * (1 - f) + h[B] * f;
   }
-  for (let pass = 0; pass < 4; pass++) for (let k = 1; k < K - 1; k++) { c[k] = (c[k - 1] + 2 * c[k] + c[k + 1]) / 4; h[k] = (h[k - 1] + 2 * h[k] + h[k + 1]) / 4; }
+  for (let k = 1; k < K - 1; k++) { c[k] = (c[k - 1] + 2 * c[k] + c[k + 1]) / 4; h[k] = (h[k - 1] + 2 * h[k] + h[k + 1]) / 4; }
+  // where the middle should go: the line's own course, smoothed over 2.5w along the path (not the finger,
+  // which is never exactly on the line). The ends stay put: the wobble is taken off the straight course
+  // between them, smoothed with odd reflection, and the move fades in from each end of the stroke.
+  const dlt = new Float64Array(K), sg = 2.5 * w / (w / 2), rad = Math.ceil(sg * 3), r0 = new Float64Array(K);
+  for (let k = 0; k < K; k++) r0[k] = c[k] - (c[0] + (c[K - 1] - c[0]) * k / Math.max(1, K - 1));
+  const at = (j: number): number => j < 0 ? -at(-j) : j > K - 1 ? -at(2 * (K - 1) - j) : r0[j];
+  const total = (K - 1) * w / 2, T = Math.max(w / 2, Math.min(R, total / 3));
+  for (let k = 0; k < K; k++) {
+    let sum = 0, ws = 0;
+    for (let j = -rad; j <= rad; j++) { const g = Math.exp(-j * j / (2 * sg * sg)); sum += at(Math.max(-(K - 1), Math.min(2 * (K - 1), k + j))) * g; ws += g; }
+    const e = Math.min(k, K - 1 - k) * w / 2 / T, ease = e >= 1 ? 1 : e * e * (3 - 2 * e);
+    dlt[k] = (sum / ws - r0[k]) * ease;
+  }
   const M = R + 4 * w;
   const x0 = Math.max(0, Math.floor(bx0 - M)), y0 = Math.max(0, Math.floor(by0 - M)), x1 = Math.min(W, Math.ceil(bx1 + M)), y1 = Math.min(H, Math.ceil(by1 + M));
   if (x1 <= x0 || y1 <= y0) return out;
@@ -362,7 +375,7 @@ export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, pus
       // fades out past the ends of the path
       const ends = (bk === 0 && bt === 0) || (k1 === K - 1 && bt === 1) ? Math.max(0, 1 - best / R) : 1;
       const f = strength * ends; if (f <= 0) continue;
-      mv[i * 2] = -cc * ux * f; mv[i * 2 + 1] = -cc * uy * f; moved = true;
+      const dd = dlt[bk] * (1 - bt) + dlt[k1] * bt; mv[i * 2] = dd * ux * f; mv[i * 2 + 1] = dd * uy * f; moved = true;
     }
     if (!moved) return p;
     // the move eases in and out along the outline
