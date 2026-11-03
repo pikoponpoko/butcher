@@ -13,7 +13,7 @@ import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 export type Pane = 'layer' | 'slice';
 const INIT: Settings = {
   mode: 'folder', fmt: 'png', quality: '90', size: 'orig', picks: PICKS_DEFAULT, fits: FITS_DEFAULT, px: '1080', basis: 'canvas', trim: true, slTrim: true, slIso: false,
-  prefix: '', suffix: '', hidden: false, tree: true, slFill: true, allFiles: false, incWarn: false, out: 'zip',
+  prefix: '', suffix: '', hidden: false, tree: true, slFill: false, allFiles: false, incWarn: false, out: 'zip',
 };
 
 export function useImageTool() {
@@ -85,8 +85,7 @@ export function useImageTool() {
     bump();
   }
   // a document made elsewhere (the 線画 tool's layers). Each send starts the slices over: auto slices per drawing
-  // and the slice settings back to their defaults, except the fill: the line layers are clear outside the drawing
-  // and the fill would paint that the line color.
+  // and the slice settings back to their defaults.
   function addDoc(name: string, psd: Parameters<typeof makeDoc>[1]) {
     if (job.current) return;
     const d = makeDoc(name, psd), i = docs.findIndex(x => x.fromLine && x.name === name);
@@ -100,7 +99,7 @@ export function useImageTool() {
     for (const p of found) d.slices.push({ id: newSliceId(), name: nextSliceName(d), ...p, on: true });
     d.sliceSel = d.slices[0]?.id ?? null;
     persistSlices(d);
-    setO(p => ({ ...p, slTrim: INIT.slTrim, slIso: found.drawings ? true : INIT.slIso, slFill: false }));
+    setO(p => ({ ...p, slTrim: INIT.slTrim, slIso: found.drawings ? true : INIT.slIso, slFill: INIT.slFill }));
     setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
