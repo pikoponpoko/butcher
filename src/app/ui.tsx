@@ -12,7 +12,7 @@ export function AddHint({ id, hidden, formats }: { id?: string; hidden?: boolean
       <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
       <span className="fine">{tr('クリックまたはドロップで追加')}</span><span className="coarse">{tr('タップして追加')}</span>
       <span className="fmts">{formats}</span>
-      <span>{tr('ファイルは端末内で処理され、送信されません')}</span>
+      <span>{tr('ファイルは端末内で処理されます')}</span>
     </span>
   );
 }
