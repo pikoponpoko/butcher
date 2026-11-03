@@ -69,3 +69,39 @@ test('alphaBounds trims to opaque pixels', () => {
   expect(alphaBounds(rgba, 4, 4)).toEqual({ x: 1, y: 1, w: 2, h: 2 });
   expect(alphaBounds(new Uint8ClampedArray(16), 2, 2)).toBeNull();
 });
+
+// 1x1 layers with a 1x1 mask: the mask is applied once whether or not layers are clipped onto the base
+describe('masks under clipping', () => {
+  const one = (rgba: number[]): PsdNode => ({ left: 0, top: 0, right: 1, bottom: 1, imageData: { width: 1, height: 1, data: Uint8ClampedArray.from(rgba) } });
+  const mask = (v: number) => ({ left: 0, top: 0, right: 1, bottom: 1, defaultColor: 0, imageData: { width: 1, height: 1, data: Uint8ClampedArray.from([v, v, v, 255]) } });
+  const one1 = (children: PsdNode[]) => { const r = compositeDocument({ width: 1, height: 1, children }); return [...toRGBA8(r.buf, 1, 1)]; };
+  const red = (): PsdNode => ({ name: 'clip', clipping: true, ...one([255, 0, 0, 255]) });
+  const white = (extra: Partial<PsdNode> = {}): PsdNode => ({ name: 'base', ...one([255, 255, 255, 255]), mask: mask(128), ...extra });
+
+  test('raster base: alpha stays 128 with a clipped layer', () => {
+    expect(one1([white()])).toEqual([255, 255, 255, 128]);
+    expect(one1([white(), red()])).toEqual([255, 0, 0, 128]);
+  });
+  test('raster base with layer opacity', () => {
+    expect(one1([white({ opacity: 0.5 })])[3]).toBe(64);
+    expect(one1([white({ opacity: 0.5 }), red()])).toEqual([255, 0, 0, 64]);
+  });
+  test('raster base with fill opacity', () => {
+    expect(one1([white({ fillOpacity: 0.5 }), red()])[3]).toBe(one1([white({ fillOpacity: 0.5 })])[3]);
+  });
+  test('folder base with a mask', () => {
+    const f = (o = 1): PsdNode => ({ name: 'f', opacity: o, children: [{ name: 'x', ...one([255, 255, 255, 255]) }], mask: mask(128) });
+    expect(one1([f(), red()])).toEqual([255, 0, 0, 128]);
+    expect(one1([f(0.5), red()])).toEqual([255, 0, 0, 64]);
+  });
+  test('over an opaque backdrop the clipped color shows at the mask strength', () => {
+    const blue = { name: 'bg', ...one([0, 0, 255, 255]) };
+    const ref = one1([blue, { name: 'r', ...one([255, 0, 0, 255]), mask: mask(128) }]);
+    expect(one1([blue, white(), red()])).toEqual(ref);
+  });
+  test('isolated layer export keeps the mask once', () => {
+    const d: PsdDoc = { width: 1, height: 1, children: [white(), red()] };
+    const r = compositeNode(d, d.children![0]);
+    expect([...toRGBA8(r.buf, 1, 1)][3]).toBe(128);
+  });
+});

@@ -281,7 +281,8 @@ function renderChildren(dst: Float32Array, children: PsdNode[], W: number, H: nu
       const before = dst.slice();
       renderChildren(dst, [L], W, H, o, path, []);
       const iso = renderIsolated(L, W, H, o, path, []);
-      const ms = maskSampler(L.mask);
+      // a raster layer's mask is already in iso (drawLayer applies it); a folder's mask is applied at draw time
+      const ms = L.children ? maskSampler(L.mask) : null;
       const cov = new Float32Array(W * H);
       for (let p = 0; p < W * H; p++) cov[p] = iso[p * 4 + 3] * (ms ? ms(p % W, (p / W) | 0) : 1) * opacity;
       // Extrapolate the base to full coverage so the final lerp does not apply coverage twice.

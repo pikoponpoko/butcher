@@ -1,11 +1,12 @@
 // Image tool state. Documents are large mutable objects (parsed PSD trees), so they stay mutable and
 // `bump()` re-renders after an in-place change.
 import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
-import { type Doc, type Node, type Slice, type Snap, SRC_RE, hiddenKey, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sliceData, stem, summarize } from './model';
+import { type Doc, type Node, type Slice, type Snap, SRC_RE, TooLarge, hiddenKey, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sliceData, stem, summarize } from './model';
 import { type Rect, detectPanels } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
 import { saveBlob } from '../save';
 import { tr } from '../i18n';
+import { fmtMem } from '../memory';
 import { FITS_DEFAULT, PICKS_DEFAULT } from '../presets';
 
 export type Pane = 'layer' | 'slice';
@@ -57,27 +58,40 @@ export function useImageTool() {
     to.push(snap(doc)); restore(doc, s); sliceChanged();
   }
 
-  async function openFiles(files: File[]) {
+  // a file that is likely too large waits here until このまま開く (force) or the next open
+  const [big, setBig] = useState<File | null>(null);
+  async function openFiles(files: File[], force = false) {
     let last: Doc | undefined;
+    setBig(null);
     for (const f of files) {
-      try { setStatus([{ t: f.name }]); last = await openFile(f.name, await f.arrayBuffer()); docs.push(last); setStatus([]); }
-      catch (err: any) { setStatus([{ t: tr('{f}: 読み込めません（{e}）', { f: f.name, e: tr(String(err.message || err)) }), c: 'err' }]); }
+      try { setStatus([{ t: f.name }]); last = await openFile(f.name, await f.arrayBuffer(), force); docs.push(last); setStatus([]); }
+      catch (err: any) {
+        if (err instanceof TooLarge) { setBig(f); setStatus([{ t: tr('{f}（{w}×{h}）は処理に約 {m} のメモリが必要です。画像を縮小するか、メモリの多い端末で開いてください', { f: f.name, w: err.W, h: err.H, m: fmtMem(err.need) }), c: 'warn' }]); }
+        else setStatus([{ t: tr('{f}: 読み込めません（{e}）', { f: f.name, e: tr(String(err.message || err)) }), c: 'err' }]);
+      }
     }
     if (last) { setCur(docs.length - 1); setSel(null); if (last.isImage && pane !== 'slice') setPane('slice'); }
     bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
   function closeDoc(i: number) {
+    if (job.current) return;
     docs.splice(i, 1);
     if (i <= cur) { const c = Math.max(0, i < cur ? cur - 1 : Math.min(cur, docs.length - 1)); setCur(c); if (i === cur) setSel(null); }
     setStatus([]); bump();
   }
 
+  // one export at a time; the panels are locked while it runs and the export button cancels it
+  const job = useRef<AbortController | null>(null);
   async function doExport() {
+    if (job.current || !doc) return;
+    const ac = job.current = new AbortController();
     setBusy(true);
-    const s = await exportAll(o, o.allFiles ? docs : [doc!], setStatus, () => { setOutDir(false); set('out', 'zip'); });
-    setStatus(s); setBusy(false);
+    try { setStatus(await exportAll(o, o.allFiles ? docs.slice() : [doc], setStatus, () => { setOutDir(false); set('out', 'zip'); }, ac.signal)); }
+    catch (e: any) { setStatus([{ t: tr('エラー: {e}', { e: tr(String(e?.message || e)) }), c: 'err' }]); }
+    finally { job.current = null; setBusy(false); }
   }
+  const cancel = () => job.current?.abort();
   async function saveOne() {
     if (!doc) return;
     setStatus(await saveCurrent(o, doc, sel, pane === 'slice' ? curSlice(doc) : null));
@@ -127,7 +141,7 @@ export function useImageTool() {
 
   return {
     ver, bump, docs, cur, doc, sel, setSel, pane, setPane, o, set, status, setStatus, busy, outDir, preview, summary,
-    openFiles, selectDoc, closeDoc, doExport, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
+    openFiles, big, openBig: () => { if (big) openFiles([big], true); }, selectDoc, closeDoc, doExport, cancel, saveOne, sliceChanged, deleteSlice, clearSlices, autoSlice, saveSlices, loadSlices,
     begin, end, edit, undo: () => step(true), redo: () => step(false),
     accepts: (f: File) => SRC_RE.test(f.name),
   };

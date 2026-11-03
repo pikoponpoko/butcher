@@ -79,7 +79,7 @@ button, select, input { font: inherit; color: inherit; }
 
 .center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
 .stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px; overflow: hidden; position: relative; }
-.stage canvas { image-rendering: auto; background-color: var(--chk-a);
+.stage canvas, .stage img.out { image-rendering: auto; background-color: var(--chk-a);
   background-image: conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: 12px 12px; display: block; }
 .cv { position: relative; line-height: 0; }
 .sl { position: absolute; inset: 0; touch-action: none; }
@@ -115,7 +115,7 @@ button, select, input { font: inherit; color: inherit; }
 .ph > span { display: flex; align-items: center; gap: 2px; flex: none; }
 .seg button, .link, .tag { white-space: nowrap; }
 /* both languages stacked; the hidden one only reserves width */
-.dual { display: inline-grid; } .dual > * { grid-area: 1 / 1; } .dual > :last-child { visibility: hidden; }
+.dual { display: inline-grid; } .dual > * { grid-area: 1 / 1; } .dual > :last-child { visibility: hidden; } .dual.all > :not(:first-child) { visibility: hidden; }
 button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: start; }
 .drop { position: absolute; inset: 12px; border: 2px dashed var(--accent); border-radius: 10px; display: grid; place-items: center; color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--bg) 85%, transparent); }
 .warnbox { position: absolute; left: 12px; right: 12px; top: 12px; display: grid; gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--warn); color: var(--warn); max-height: 40%; overflow: auto; }
@@ -142,6 +142,7 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .signopt .unit { gap: 6px; }
 .signopt .seg button { padding: 0 6px; }
 .sumrow { display: flex; justify-content: space-between; gap: 8px; min-height: 16px; }
+.sumrow > :first-child { flex: none; white-space: nowrap; } .sumrow > :last-child { min-width: 0; }
 .act { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sec h3 { margin: 0; font-size: 11px; font-weight: 600; color: var(--muted); }
 .seg { display: inline-grid; grid-auto-flow: column; justify-self: start; width: max-content; background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 2px; gap: 2px; }
@@ -290,3 +291,8 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .stage#stage.zoomed { overflow: hidden; touch-action: none; }
 .stage#stage.zoomed:not(.slicing) { cursor: grab; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* settings locked while an export runs */
+fieldset.lock { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
+fieldset.lock:disabled .prop input, fieldset.lock:disabled .prop select, fieldset.lock:disabled .pickb, fieldset.lock:disabled .prop.sw { opacity: .5; }
+@media (max-width: 640px) { .status #pvSize { display: none; } }
