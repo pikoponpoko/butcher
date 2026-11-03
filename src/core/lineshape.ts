@@ -286,7 +286,7 @@ export function shapeLine(alpha: Uint8Array, W: number, H: number, w: number, s:
 
 // ---------- push brush
 
-// The traced path, evenly spaced and lightly smoothed (finger shake), as x, y pairs.
+// The traced path, every w/2 px and smoothed over about one line width (finger shake), as x, y pairs.
 function brushPath(p: number[], w: number): number[] {
   const m = p.length / 2; if (m < 2) return p.slice();
   const acc = [0]; for (let i = 1; i < m; i++) acc.push(acc[i - 1] + Math.hypot(p[i * 2] - p[i * 2 - 2], p[i * 2 + 1] - p[i * 2 - 1]));
@@ -297,44 +297,78 @@ function brushPath(p: number[], w: number): number[] {
     const f = acc[i + 1] > acc[i] ? (at - acc[i]) / (acc[i + 1] - acc[i]) : 0;
     q.push(p[i * 2] + (p[i * 2 + 2] - p[i * 2]) * f, p[i * 2 + 1] + (p[i * 2 + 3] - p[i * 2 + 1]) * f);
   }
-  for (let pass = 0; pass < 3; pass++) for (let k = 1; k < n; k++) for (let c = 0; c < 2; c++) q[k * 2 + c] = (q[k * 2 - 2 + c] + 2 * q[k * 2 + c] + q[k * 2 + 2 + c]) / 4;
+  for (let pass = 0; pass < 8; pass++) for (let k = 1; k < n; k++) for (let c = 0; c < 2; c++) q[k * 2 + c] = (q[k * 2 - 2 + c] + 2 * q[k * 2 + c] + q[k * 2 + 2 + c]) / 4;
   return q;
 }
 
-// Drag along a line: inside the brush, the outline moves toward a strongly smoothed course, only across
-// the drag direction (bumps get pressed back, the line keeps its width). One pass = strength 0.6.
-// Returns a new alpha; only pixels near the path change.
-export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, push: Push, strength = 0.6): Uint8Array {
-  const P = brushPath(push.p, w), R = Math.max(1, push.r), out = alpha.slice();
-  if (P.length < 4) return out;
+// Drag along a line: the stretch of line under the brush moves across the drag, so that its middle
+// follows the (smoothed) path. Both edges move together, so the line keeps its width; other lines inside
+// the brush stay. One pass goes `strength` of the way. Returns a new alpha; only pixels near the path change.
+export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, push: Push, strength = 0.7): Uint8Array {
+  const P = brushPath(push.p, w), R = Math.max(1, push.r), out = alpha.slice(), K = P.length / 2;
+  if (K < 2) return out;
   let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
   for (let i = 0; i < P.length; i += 2) { bx0 = Math.min(bx0, P[i]); bx1 = Math.max(bx1, P[i]); by0 = Math.min(by0, P[i + 1]); by1 = Math.max(by1, P[i + 1]); }
-  // the smoothing reaches about 4σ along the outline: trace that much around the brush
-  const M = R + 12 * w;
+  // normals of the path, and where the line under each path point sits across it: the ink run along the
+  // normal that holds (or is closest to) the path point → its middle `c` and half-width `h`
+  const nx = new Float64Array(K), ny = new Float64Array(K), c = new Float64Array(K).fill(NaN), h = new Float64Array(K);
+  const ink = (x: number, y: number) => { const xi = Math.floor(x), yi = Math.floor(y); return xi >= 0 && yi >= 0 && xi < W && yi < H && alpha[yi * W + xi] >= 128; };
+  for (let k = 0; k < K; k++) {
+    const a = Math.max(0, k - 1), b = Math.min(K - 1, k + 1), tx = P[b * 2] - P[a * 2], ty = P[b * 2 + 1] - P[a * 2 + 1], l = Math.hypot(tx, ty) || 1;
+    nx[k] = -ty / l; ny[k] = tx / l;
+    let best = Infinity, run0 = NaN;
+    const reach = R + w;
+    for (let s = -reach, was = false; s <= reach + 0.5; s += 0.5) {
+      const on = s <= reach && ink(P[k * 2] + nx[k] * s, P[k * 2 + 1] + ny[k] * s);
+      if (on && !was) run0 = s;
+      if (!on && was) { const e = s - 0.5, m = (run0 + e) / 2, d = run0 <= 0 && e >= 0 ? 0 : Math.min(Math.abs(run0), Math.abs(e)); if (d < best && d <= R) { best = d; c[k] = m; h[k] = (e - run0) / 2 + 0.25; } }
+      was = on;
+    }
+  }
+  // fill gaps from neighbours, then ease along the path
+  let any = false;
+  for (let k = 0; k < K; k++) if (!isNaN(c[k])) any = true;
+  if (!any) return out;
+  for (let k = 0; k < K; k++) if (isNaN(c[k])) {
+    let a = k - 1; while (a >= 0 && isNaN(c[a])) a--;
+    let b = k + 1; while (b < K && isNaN(c[b])) b++;
+    const A = a >= 0 ? a : b, B = b < K ? b : a, f = A === B ? 0 : (k - A) / (B - A);
+    c[k] = c[A] * (1 - f) + c[B] * f; h[k] = h[A] * (1 - f) + h[B] * f;
+  }
+  for (let pass = 0; pass < 4; pass++) for (let k = 1; k < K - 1; k++) { c[k] = (c[k - 1] + 2 * c[k] + c[k + 1]) / 4; h[k] = (h[k - 1] + 2 * h[k] + h[k + 1]) / 4; }
+  const M = R + 4 * w;
   const x0 = Math.max(0, Math.floor(bx0 - M)), y0 = Math.max(0, Math.floor(by0 - M)), x1 = Math.min(W, Math.ceil(bx1 + M)), y1 = Math.min(H, Math.ceil(by1 + M));
   if (x1 <= x0 || y1 <= y0) return out;
   const cw = x1 - x0, ch = y1 - y0;
   const loops = contours(alpha, W, H, x0, y0, cw, ch).map(p0 => {
-    // skip outlines that don't come near the brush
     let lx0 = Infinity, ly0 = Infinity, lx1 = -Infinity, ly1 = -Infinity;
     for (let i = 0; i < p0.length; i += 2) { lx0 = Math.min(lx0, p0[i]); lx1 = Math.max(lx1, p0[i]); ly0 = Math.min(ly0, p0[i + 1]); ly1 = Math.max(ly1, p0[i + 1]); }
     if (lx0 > bx1 + R || lx1 < bx0 - R || ly0 > by1 + R || ly1 < by0 - R) return p0;
-    const p = resample(p0), n = p.length / 2, wt = new Float64Array(n), nrm = new Float64Array(n * 2);
-    let any = false;
+    const p = resample(p0), n = p.length / 2, mv = new Float64Array(n * 2);
+    let moved = false;
     for (let i = 0; i < n; i++) {
-      const x = p[i * 2], y = p[i * 2 + 1]; let best = Infinity, tx = 1, ty = 0;
-      for (let k = 0; k + 3 < P.length; k += 2) {
-        const ax = P[k], ay = P[k + 1], vx = P[k + 2] - ax, vy = P[k + 3] - ay, l2 = vx * vx + vy * vy || 1e-9;
+      const x = p[i * 2], y = p[i * 2 + 1]; let best = Infinity, bk = 0, bt = 0;
+      for (let k = 0; k + 1 < K; k++) {
+        const ax = P[k * 2], ay = P[k * 2 + 1], vx = P[k * 2 + 2] - ax, vy = P[k * 2 + 3] - ay, l2 = vx * vx + vy * vy || 1e-9;
         const t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2)), d = Math.hypot(x - ax - vx * t, y - ay - vy * t);
-        if (d < best) { best = d; const l = Math.sqrt(l2); tx = vx / l; ty = vy / l; }
+        if (d < best) { best = d; bk = k; bt = t; }
       }
-      const f = 1 - best / R; if (f > 0) { wt[i] = Math.pow(f, 0.7) * strength; any = true; }
-      nrm[i * 2] = -ty; nrm[i * 2 + 1] = tx;
+      if (best > R + w) continue;
+      const k1 = bk + 1, cc = c[bk] * (1 - bt) + c[k1] * bt, hh = h[bk] * (1 - bt) + h[k1] * bt;
+      const qx = nx[bk] * (1 - bt) + nx[k1] * bt, qy = ny[bk] * (1 - bt) + ny[k1] * bt, ql = Math.hypot(qx, qy) || 1;
+      const ux = qx / ql, uy = qy / ql, d = (x - P[bk * 2] - (P[k1 * 2] - P[bk * 2]) * bt) * ux + (y - P[bk * 2 + 1] - (P[k1 * 2 + 1] - P[bk * 2 + 1]) * bt) * uy;
+      // only the edges of the line being pushed
+      if (Math.abs(Math.abs(d - cc) - hh) > Math.max(2, 0.35 * w)) continue;
+      // fades out past the ends of the path
+      const ends = (bk === 0 && bt === 0) || (k1 === K - 1 && bt === 1) ? Math.max(0, 1 - best / R) : 1;
+      const f = strength * ends; if (f <= 0) continue;
+      mv[i * 2] = -cc * ux * f; mv[i * 2 + 1] = -cc * uy * f; moved = true;
     }
-    if (!any) return p;
-    const s = Math.min(3 * w, lengthOf(p) / (2 * Math.PI) * 0.35) / 0.5;
-    if (s <= 0.5) return p;
-    return moveToward(p, taubin(p, s), 0.7 * w, w / 0.5, blurWrap(wt, 1, w / 0.5), nrm);
+    if (!moved) return p;
+    // the move eases in and out along the outline
+    const e = blurWrap(mv, 2, w / 2 / 0.5);
+    for (let i = 0; i < n * 2; i++) p[i] += e[i];
+    return p;
   });
   const { inside, dist } = raster(loops, x0, y0, cw, ch, 1.5);
   // write back only near the path (the rest is the same outline drawn again)
