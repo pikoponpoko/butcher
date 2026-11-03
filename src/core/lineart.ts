@@ -77,38 +77,72 @@ export function autoLevels(L: Uint8Array): { black: number; white: number } {
 
 // 4-connected components of `mask` (two-pass union-find); labels are 1… (0 = not in mask), with per-label sizes.
 function components(mask: Uint8Array, W: number, H: number, weight?: Uint8Array) {
-  const N = W * H, lab = new Int32Array(N), par: number[] = [0];
+  const N = W * H, lab = new Int32Array(N), par = new Int32Array((N >> 1) + 2);
+  let next = 1;
   const find = (a: number) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
   for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
     if (!mask[i]) continue;
     const l = x > 0 ? lab[i - 1] : 0, u = y > 0 ? lab[i - W] : 0;
-    if (!l && !u) { lab[i] = par.length; par.push(par.length); }
-    else if (l && u && l !== u) { const a = find(l), b = find(u); lab[i] = a; if (a !== b) par[Math.max(a, b)] = Math.min(a, b); }
-    else lab[i] = l || u;
+    if (l) {
+      lab[i] = l;
+      if (u && u !== l) { const ra = find(l), rb = find(u); if (ra !== rb) { if (ra < rb) par[rb] = ra; else par[ra] = rb; } }
+    } else if (u) lab[i] = u;
+    else { lab[i] = next; par[next] = next; next++; }
   }
-  const map = new Int32Array(par.length), sizes: number[] = [0];
-  for (let a = 1; a < par.length; a++) { const r = find(a); if (r === a) { map[a] = sizes.length; sizes.push(0); } else map[a] = map[r]; }
-  for (let i = 0; i < N; i++) if (lab[i]) { const m = lab[i] = map[lab[i]]; sizes[m] += weight ? weight[i] : 1; }
+  const map = new Int32Array(next); let n = 0;
+  for (let a = 1; a < next; a++) { const r = find(a); map[a] = r === a ? ++n : map[r]; }
+  const sizes = new Array<number>(n + 1).fill(0);
+  if (weight) { for (let i = 0; i < N; i++) if (lab[i]) { const m = lab[i] = map[lab[i]]; sizes[m] += weight[i]; } }
+  else for (let i = 0; i < N; i++) if (lab[i]) { const m = lab[i] = map[lab[i]]; sizes[m]++; }
   return { lab, sizes };
+}
+
+// Runs of `mask` row by row, joined into 4-connected components (fast on large, mostly uniform areas).
+// Returns each run as [y·W + x0, length, component] and the components' sizes (or weight sums).
+function runComponents(mask: Uint8Array, W: number, H: number, weight?: Uint8Array) {
+  const runs: number[] = [], par: number[] = [];
+  const find = (a: number) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  let prevA = 0, prevB = 0;
+  for (let y = 0; y < H; y++) {
+    const o = y * W, curA = runs.length;
+    let j = prevA;
+    for (let x = 0; x < W;) {
+      if (!mask[o + x]) { x++; continue; }
+      const x0 = x; while (x < W && mask[o + x]) x++;
+      const id = par.length; par.push(id); runs.push(o + x0, x - x0, id);
+      // join runs of the row above that overlap [x0, x)
+      while (j < prevB && runs[j] - (o - W) + runs[j + 1] <= x0) j += 3;
+      for (let k = j; k < prevB && runs[k] - (o - W) < x; k += 3) { const ra = find(runs[k + 2]), rb = find(id); if (ra !== rb) par[Math.max(ra, rb)] = Math.min(ra, rb); }
+    }
+    prevA = curA; prevB = runs.length;
+  }
+  const sizes = new Float64Array(par.length);
+  for (let r = 0; r < runs.length; r += 3) {
+    const c = runs[r + 2] = find(runs[r + 2]);
+    if (weight) { let w = 0; for (let i = runs[r], e = i + runs[r + 1]; i < e; i++) w += weight[i]; sizes[c] += w; } else sizes[c] += runs[r + 1];
+  }
+  return { runs, sizes };
 }
 
 // Line opacity after levels and speck removal.
 export function lineAlpha(L: Uint8Array, W: number, H: number, s: Pick<LineSettings, 'black' | 'white' | 'speck'>): Uint8Array {
   const N = W * H, a = new Uint8Array(N), b = Math.min(s.black, s.white - 1), span = Math.max(1, s.white - b);
-  for (let i = 0; i < N; i++) { const v = (s.white - L[i]) / span; a[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255); }
+  const lut = new Uint8Array(256); for (let v = 0; v < 256; v++) { const t = (s.white - v) / span; lut[v] = t <= 0 ? 0 : t >= 1 ? 255 : Math.round(t * 255); }
+  for (let i = 0; i < N; i++) a[i] = lut[L[i]];
   if (s.speck > 0) {
     // ink islands: everything with any opacity, sized by its solid (>= 50%) pixels
     const any = new Uint8Array(N), core = new Uint8Array(N);
     for (let i = 0; i < N; i++) { any[i] = a[i] > 0 ? 1 : 0; core[i] = a[i] >= 128 ? 1 : 0; }
-    const ink = components(any, W, H, core);
-    const area = s.speck * s.speck;
-    for (let i = 0; i < N; i++) if (ink.lab[i] && ink.sizes[ink.lab[i]] < area) a[i] = 0;
+    const area = s.speck * s.speck, ink = runComponents(any, W, H, core);
+    for (let r = 0; r < ink.runs.length; r += 3) if (ink.sizes[ink.runs[r + 2]] < area) a.fill(0, ink.runs[r], ink.runs[r] + ink.runs[r + 1]);
     // paper pinholes inside ink (not touching the border)
     const paper = new Uint8Array(N); for (let i = 0; i < N; i++) paper[i] = a[i] < 128 ? 1 : 0;
-    const p = components(paper, W, H), edge = new Uint8Array(p.sizes.length);
-    for (let x = 0; x < W; x++) { edge[p.lab[x]] = 1; edge[p.lab[N - W + x]] = 1; }
-    for (let y = 0; y < H; y++) { edge[p.lab[y * W]] = 1; edge[p.lab[y * W + W - 1]] = 1; }
-    for (let i = 0; i < N; i++) if (p.lab[i] && !edge[p.lab[i]] && p.sizes[p.lab[i]] < area / 4) a[i] = 255;
+    const p = runComponents(paper, W, H), edge = new Uint8Array(p.sizes.length);
+    for (let r = 0; r < p.runs.length; r += 3) {
+      const i = p.runs[r], x = i % W, y = i / W | 0;
+      if (y === 0 || y === H - 1 || x === 0 || x + p.runs[r + 1] === W) edge[p.runs[r + 2]] = 1;
+    }
+    for (let r = 0; r < p.runs.length; r += 3) { const c = p.runs[r + 2]; if (!edge[c] && p.sizes[c] < area / 4) a.fill(255, p.runs[r], p.runs[r] + p.runs[r + 1]); }
   }
   return a;
 }
@@ -284,14 +318,18 @@ export function regions(alpha: Uint8Array, W: number, H: number, gap: number, wi
 // Regions are found on a smaller copy when lines are thick: the region borders sit at the middle of the
 // line, so a few pixels of rounding stay hidden under it.
 export function analyze(rgba: ArrayLike<number>, W: number, H: number, s: LineSettings, L = luminance(rgba, W, H)): LineArt {
-  const alpha = lineAlpha(L, W, H, s);
-  const sw = strokeWidth(alpha, W, H), k = Math.max(1, Math.min(4, Math.floor(sw / 5)));
-  if (k === 1) return { alpha, ...regions(alpha, W, H, s.gap, sw) };
+  return regionsOf(lineAlpha(L, W, H, s), W, H, s.gap);
+}
+// the region step alone, for a line layer that is already known (only the gap setting changed)
+export function regionsOf(alpha: Uint8Array, W: number, H: number, gap: number, sw = strokeWidth(alpha, W, H)): LineArt {
+  const k = Math.max(1, Math.min(4, Math.floor(sw / 5)));
+  if (k === 1) return { alpha, ...regions(alpha, W, H, gap, sw) };
   const w = Math.ceil(W / k), h = Math.ceil(H / k), small = new Uint8Array(w * h), sum = new Uint32Array(w * h), cnt = new Uint32Array(w * h);
-  for (let y = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++) { const j = o + (x / k | 0); sum[j] += alpha[y * W + x]; cnt[j]++; } }
+  const xi = new Int32Array(W); for (let x = 0; x < W; x++) xi[x] = x / k | 0;
+  for (let y = 0, i = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++, i++) { const j = o + xi[x]; sum[j] += alpha[i]; cnt[j]++; } }
   for (let j = 0; j < w * h; j++) small[j] = Math.round(sum[j] / cnt[j]);
-  const r = regions(small, w, h, s.gap / k, sw / k), region = new Int32Array(W * H);
-  for (let y = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++) region[y * W + x] = r.region[o + (x / k | 0)]; }
+  const r = regions(small, w, h, gap / k, sw / k), region = new Int32Array(W * H);
+  for (let y = 0, i = 0; y < H; y++) { const o = (y / k | 0) * w; for (let x = 0; x < W; x++, i++) region[i] = r.region[o + xi[x]]; }
   return { alpha, W, H, region, outside: r.outside, count: r.count, gaps: r.gaps.map(g => g.map(v => v * k + k / 2)) };
 }
 

@@ -58,6 +58,21 @@ function layersOf(la: LineArt, ops: Op[], lineC: string, baseC: string): Layers 
   return { line, point: pt, base: bs, all };
 }
 
+// what the stage shows: fills under the line, one pass over a 32-bit view
+function composite(la: LineArt, ops: Op[], lineC: string, baseC: string): Uint8ClampedArray {
+  const { point, base } = paintOf(la, ops), L = hexRGB(lineC), B = hexRGB(baseC);
+  const fill = new Int32Array(la.count * 3).fill(-1);
+  for (let r = 0; r < la.count; r++) { const c = point.get(r); const v = c ? hexRGB(c) : base(r) ? B : null; if (v) fill.set(v, r * 3); }
+  const N = la.W * la.H, out = new Uint8ClampedArray(N * 4);
+  for (let i = 0, p = 0; i < N; i++, p += 4) {
+    const r = la.region[i] * 3, a = la.alpha[i];
+    if (fill[r] < 0) { if (a) { out[p] = L[0]; out[p + 1] = L[1]; out[p + 2] = L[2]; out[p + 3] = a; } continue; }
+    const t = a / 255, u = 1 - t;
+    out[p] = L[0] * t + fill[r] * u; out[p + 1] = L[1] * t + fill[r + 1] * u; out[p + 2] = L[2] * t + fill[r + 2] * u; out[p + 3] = 255;
+  }
+  return out;
+}
+
 const img = (data: Uint8ClampedArray, W: number, H: number) => ({ width: W, height: H, data });
 // three layers, bottom first, as the image tool and ag-psd read them
 export function layeredDoc(L: Layers, W: number, H: number): PsdDoc {
@@ -124,10 +139,12 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     return () => clearTimeout(t);
   }, [src, s.black, s.white, s.speck, s.gap]);
 
-  const layers = useRef<Layers | null>(null);
+  // the stage shows the composite; the separate layers are made only for output
+  const shown = useRef<Uint8ClampedArray | null>(null);
   const [ver, setVer] = useState(0);
-  useEffect(() => { layers.current = la ? layersOf(la, ops.current, lineC, baseC) : null; setVer(v => v + 1); }, [la, lineC, baseC]);
-  const repaint = () => { if (la) { layers.current = layersOf(la, ops.current, lineC, baseC); setVer(v => v + 1); } };
+  useEffect(() => { shown.current = la ? composite(la, ops.current, lineC, baseC) : null; setVer(v => v + 1); }, [la, lineC, baseC]);
+  const repaint = () => { if (la) { shown.current = composite(la, ops.current, lineC, baseC); setVer(v => v + 1); } };
+  const layersNow = () => la ? layersOf(la, ops.current, lineC, baseC) : null;
 
   // ---------- stage: fit, pinch / ctrl+wheel zoom, drag to pan, tap to paint
   const stageRef = useRef<HTMLDivElement>(null), cv = useRef<HTMLCanvasElement>(null);
@@ -140,7 +157,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   useLayoutEffect(() => {
     const c = cv.current!; if (!src) return;
     if (c.width !== src.W || c.height !== src.H) { c.width = src.W; c.height = src.H; }
-    const data = view === 'src' || !layers.current ? src.rgba : layers.current.all;
+    const data = view === 'src' || !shown.current ? src.rgba : shown.current;
     const ctx = c.getContext('2d')!; ctx.clearRect(0, 0, src.W, src.H); ctx.putImageData(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, src.W, src.H), 0, 0);
   }, [src, ver, view]);
 
@@ -233,7 +250,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   // ---------- output
   const stem = () => (src?.name || 'line').replace(/\.[^.]+$/, '');
   async function doExport() {
-    const L = layers.current; if (!src || !L || busy) return;
+    const L = layersNow(); if (!src || !L || busy) return;
     setBusy(true);
     try {
       const name = `${stem()}.${fmt}`;
@@ -243,7 +260,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     } catch (e: any) { setStatus([{ t: tr('エラー: {e}', { e: String(e?.message || e) }), c: 'err' }]); }
     finally { setBusy(false); }
   }
-  const toImage = () => { const L = layers.current; if (src && L) onOpenImage(`${stem()}.psd`, layeredDoc(L, src.W, src.H)); };
+  const toImage = () => { const L = layersNow(); if (src && L) onOpenImage(`${stem()}.psd`, layeredDoc(L, src.W, src.H)); };
   useImperativeHandle(ref, () => ({ open, export: doExport }));
 
   const num = (k: keyof LineSettings, lo: number, hi: number) => (v: string) => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setS(p => ({ ...p, [k]: Math.max(lo, Math.min(hi, n)) })); };
