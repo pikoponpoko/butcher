@@ -301,86 +301,70 @@ function brushPath(p: number[], w: number): number[] {
   return q;
 }
 
-// Drag along a line: the stretch of line under the brush moves across the drag, so that its middle
-// runs smooth (its own course with the wobble taken out). Both edges move together, so the line keeps its width; other lines inside
-// the brush stay. Returns a new alpha; only pixels near the path change.
+// Brush over a line: under the brush, the line's middle runs smooth and its width evens out.
+// Each outline point finds the far side of the stroke straight across (a ray into the ink); halfway is the
+// middle. Middles, widths and directions are smoothed along the outline (over 2.5w), and the point goes to
+// the smoothed middle minus half the smoothed width. Both sides of a stroke find the same middle, so they
+// move together. The drag direction doesn't matter; the brush only says where. Returns a new alpha.
 export function pushLine(alpha: Uint8Array, W: number, H: number, w: number, push: Push, strength = 1): Uint8Array {
   const P = brushPath(push.p, w), R = Math.max(1, push.r), out = alpha.slice(), K = P.length / 2;
-  if (K < 2) return out;
+  if (K < 1) return out;
   let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
   for (let i = 0; i < P.length; i += 2) { bx0 = Math.min(bx0, P[i]); bx1 = Math.max(bx1, P[i]); by0 = Math.min(by0, P[i + 1]); by1 = Math.max(by1, P[i + 1]); }
-  // normals of the path, and where the line under each path point sits across it: the ink run along the
-  // normal that holds (or is closest to) the path point → its middle `c` and half-width `h`
-  const nx = new Float64Array(K), ny = new Float64Array(K), c = new Float64Array(K).fill(NaN), h = new Float64Array(K);
-  const ink = (x: number, y: number) => { const xi = Math.floor(x), yi = Math.floor(y); return xi >= 0 && yi >= 0 && xi < W && yi < H && alpha[yi * W + xi] >= 128; };
-  for (let k = 0; k < K; k++) {
-    const a = Math.max(0, k - 1), b = Math.min(K - 1, k + 1), tx = P[b * 2] - P[a * 2], ty = P[b * 2 + 1] - P[a * 2 + 1], l = Math.hypot(tx, ty) || 1;
-    nx[k] = -ty / l; ny[k] = tx / l;
-    let best = Infinity, run0 = NaN;
-    const reach = R + w;
-    for (let s = -reach, was = false; s <= reach + 0.5; s += 0.5) {
-      const on = s <= reach && ink(P[k * 2] + nx[k] * s, P[k * 2 + 1] + ny[k] * s);
-      if (on && !was) run0 = s;
-      if (!on && was) { const e = s - 0.5, m = (run0 + e) / 2, d = run0 <= 0 && e >= 0 ? 0 : Math.min(Math.abs(run0), Math.abs(e)); if (d < best && d <= R) { best = d; c[k] = m; h[k] = (e - run0) / 2 + 0.25; } }
-      was = on;
-    }
-  }
-  // fill gaps from neighbours, then ease along the path
-  let any = false;
-  for (let k = 0; k < K; k++) if (!isNaN(c[k])) any = true;
-  if (!any) return out;
-  for (let k = 0; k < K; k++) if (isNaN(c[k])) {
-    let a = k - 1; while (a >= 0 && isNaN(c[a])) a--;
-    let b = k + 1; while (b < K && isNaN(c[b])) b++;
-    const A = a >= 0 ? a : b, B = b < K ? b : a, f = A === B ? 0 : (k - A) / (B - A);
-    c[k] = c[A] * (1 - f) + c[B] * f; h[k] = h[A] * (1 - f) + h[B] * f;
-  }
-  for (let k = 1; k < K - 1; k++) { c[k] = (c[k - 1] + 2 * c[k] + c[k + 1]) / 4; h[k] = (h[k - 1] + 2 * h[k] + h[k + 1]) / 4; }
-  // where the middle should go: the line's own course, smoothed over 2.5w along the path (not the finger,
-  // which is never exactly on the line). The ends stay put: the wobble is taken off the straight course
-  // between them, smoothed with odd reflection, and the move fades in from each end of the stroke.
-  const dlt = new Float64Array(K), sg = 2.5 * w / (w / 2), rad = Math.ceil(sg * 3), r0 = new Float64Array(K);
-  for (let k = 0; k < K; k++) r0[k] = c[k] - (c[0] + (c[K - 1] - c[0]) * k / Math.max(1, K - 1));
-  const at = (j: number): number => j < 0 ? -at(-j) : j > K - 1 ? -at(2 * (K - 1) - j) : r0[j];
-  const total = (K - 1) * w / 2, T = Math.max(w / 2, Math.min(R, total / 3));
-  for (let k = 0; k < K; k++) {
-    let sum = 0, ws = 0;
-    for (let j = -rad; j <= rad; j++) { const g = Math.exp(-j * j / (2 * sg * sg)); sum += at(Math.max(-(K - 1), Math.min(2 * (K - 1), k + j))) * g; ws += g; }
-    const e = Math.min(k, K - 1 - k) * w / 2 / T, ease = e >= 1 ? 1 : e * e * (3 - 2 * e);
-    dlt[k] = (sum / ws - r0[k]) * ease;
-  }
-  const M = R + 4 * w;
+  const M = R + 8 * w;
   const x0 = Math.max(0, Math.floor(bx0 - M)), y0 = Math.max(0, Math.floor(by0 - M)), x1 = Math.min(W, Math.ceil(bx1 + M)), y1 = Math.min(H, Math.ceil(by1 + M));
   if (x1 <= x0 || y1 <= y0) return out;
   const cw = x1 - x0, ch = y1 - y0;
+  // line opacity between pixel centers (bilinear)
+  const av = (x: number, y: number) => {
+    const fx = x - 0.5, fy = y - 0.5, xi = Math.floor(fx), yi = Math.floor(fy), u = fx - xi, v = fy - yi;
+    const g = (X: number, Y: number) => X < 0 || Y < 0 || X >= W || Y >= H ? 0 : alpha[Y * W + X];
+    return (g(xi, yi) * (1 - u) + g(xi + 1, yi) * u) * (1 - v) + (g(xi, yi + 1) * (1 - u) + g(xi + 1, yi + 1) * u) * v;
+  };
+  const pathDist = (x: number, y: number) => {
+    let best = Infinity;
+    if (K === 1) return Math.hypot(x - P[0], y - P[1]);
+    for (let k = 0; k + 1 < K; k++) {
+      const ax = P[k * 2], ay = P[k * 2 + 1], vx = P[k * 2 + 2] - ax, vy = P[k * 2 + 3] - ay, l2 = vx * vx + vy * vy || 1e-9;
+      const t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2)); best = Math.min(best, Math.hypot(x - ax - vx * t, y - ay - vy * t));
+    }
+    return best;
+  };
+  const maxW = 2.5 * w, sg = 2.5 * w / 0.5; // sg in outline samples (0.5 px)
   const loops = contours(alpha, W, H, x0, y0, cw, ch).map(p0 => {
     let lx0 = Infinity, ly0 = Infinity, lx1 = -Infinity, ly1 = -Infinity;
     for (let i = 0; i < p0.length; i += 2) { lx0 = Math.min(lx0, p0[i]); lx1 = Math.max(lx1, p0[i]); ly0 = Math.min(ly0, p0[i + 1]); ly1 = Math.max(ly1, p0[i + 1]); }
     if (lx0 > bx1 + R || lx1 < bx0 - R || ly0 > by1 + R || ly1 < by0 - R) return p0;
-    const p = resample(p0), n = p.length / 2, mv = new Float64Array(n * 2);
-    let moved = false;
+    const p = resample(p0), n = p.length / 2, wt = new Float64Array(n);
+    let any = false;
+    for (let i = 0; i < n; i++) { const f = 1 - pathDist(p[i * 2], p[i * 2 + 1]) / R; if (f > 0) { wt[i] = Math.pow(f, 0.7); any = true; } }
+    if (!any) return p;
+    // inward normals (the ink is on the left of the outline), from a lightly smoothed outline
+    const q = blurWrap(p, 2, Math.max(1, w / 4 / 0.5)), nin = new Float64Array(n * 2);
     for (let i = 0; i < n; i++) {
-      const x = p[i * 2], y = p[i * 2 + 1]; let best = Infinity, bk = 0, bt = 0;
-      for (let k = 0; k + 1 < K; k++) {
-        const ax = P[k * 2], ay = P[k * 2 + 1], vx = P[k * 2 + 2] - ax, vy = P[k * 2 + 3] - ay, l2 = vx * vx + vy * vy || 1e-9;
-        const t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2)), d = Math.hypot(x - ax - vx * t, y - ay - vy * t);
-        if (d < best) { best = d; bk = k; bt = t; }
-      }
-      if (best > R + w) continue;
-      const k1 = bk + 1, cc = c[bk] * (1 - bt) + c[k1] * bt, hh = h[bk] * (1 - bt) + h[k1] * bt;
-      const qx = nx[bk] * (1 - bt) + nx[k1] * bt, qy = ny[bk] * (1 - bt) + ny[k1] * bt, ql = Math.hypot(qx, qy) || 1;
-      const ux = qx / ql, uy = qy / ql, d = (x - P[bk * 2] - (P[k1 * 2] - P[bk * 2]) * bt) * ux + (y - P[bk * 2 + 1] - (P[k1 * 2 + 1] - P[bk * 2 + 1]) * bt) * uy;
-      // only the edges of the line being pushed
-      if (Math.abs(Math.abs(d - cc) - hh) > Math.max(2, 0.35 * w)) continue;
-      // fades out past the ends of the path
-      const ends = (bk === 0 && bt === 0) || (k1 === K - 1 && bt === 1) ? Math.max(0, 1 - best / R) : 1;
-      const f = strength * ends; if (f <= 0) continue;
-      const dd = dlt[bk] * (1 - bt) + dlt[k1] * bt; mv[i * 2] = dd * ux * f; mv[i * 2 + 1] = dd * uy * f; moved = true;
+      const a = (i - 2 + n) % n, b = (i + 2) % n, tx = q[b * 2] - q[a * 2], ty = q[b * 2 + 1] - q[a * 2 + 1], l = Math.hypot(tx, ty) || 1;
+      nin[i * 2] = ty / l; nin[i * 2 + 1] = -tx / l;
     }
-    if (!moved) return p;
-    // the move eases in and out along the outline
-    const e = blurWrap(mv, 2, w / 2 / 0.5);
-    for (let i = 0; i < n * 2; i++) p[i] += e[i];
+    // width straight across; points where the stroke is too wide (a blob, a junction) keep still
+    const mid = new Float64Array(n * 2), wd = new Float64Array(n), ok = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = p[i * 2], y = p[i * 2 + 1], ux = nin[i * 2], uy = nin[i * 2 + 1];
+      let d = 0.5, prev = av(x + ux * d, y + uy * d), cur = prev;
+      if (prev < 127.5) { wd[i] = w; mid[i * 2] = x + ux * w / 2; mid[i * 2 + 1] = y + uy * w / 2; continue; }
+      while (d <= maxW) { cur = av(x + ux * (d + 0.25), y + uy * (d + 0.25)); if (cur < 127.5) break; prev = cur; d += 0.25; }
+      // where the opacity crosses one half between the last two steps
+      d += 0.25 * (prev - 127.5) / Math.max(1e-6, prev - cur);
+      if (d > maxW) { wd[i] = w; mid[i * 2] = x + ux * w / 2; mid[i * 2 + 1] = y + uy * w / 2; continue; }
+      wd[i] = d; mid[i * 2] = x + ux * d / 2; mid[i * 2 + 1] = y + uy * d / 2; ok[i] = 1;
+    }
+    // (smoothing that doesn't shrink a curve, and no wider than the loop allows)
+    const sl = Math.min(sg, lengthOf(p) / (2 * Math.PI) * 0.35 / 0.5), ms = taubin(mid, sl), ws = blurWrap(wd, 1, sl), ns = blurWrap(nin, 2, sl), oks = blurWrap(ok, 1, w / 0.5), ww = blurWrap(wt, 1, w / 0.5);
+    for (let i = 0; i < n; i++) {
+      const f = ww[i] * strength * Math.min(1, Math.max(0, oks[i] * 2 - 1)); if (f <= 0) continue;
+      const l = Math.hypot(ns[i * 2], ns[i * 2 + 1]) || 1, tx = ms[i * 2] - ns[i * 2] / l * ws[i] / 2, ty = ms[i * 2 + 1] - ns[i * 2 + 1] / l * ws[i] / 2;
+      let dx = tx - p[i * 2], dy = ty - p[i * 2 + 1]; const m = Math.hypot(dx, dy), cap = 0.7 * w; if (m > cap) { dx *= cap / m; dy *= cap / m; }
+      p[i * 2] += dx * f; p[i * 2 + 1] += dy * f;
+    }
     return p;
   });
   const { inside, dist } = raster(loops, x0, y0, cw, ch, 1.5);

@@ -36,15 +36,18 @@ describe('lineshape', () => {
     expect(v[0]).toBeLessThan(base * 0.9); expect(v[1]).toBeGreaterThan(base * 1.15); expect(v[2]).toBeGreaterThan(v[1] * 1.1);
   });
 
-  it('push presses the wobble out near the brush only', () => {
+  it('push smooths the wobble near the brush only', () => {
     const W = 140, a = shapeLine(ring(W, W, 45, 8, 3), W, W, 8, { smooth: 1, thick: 0 });
     // drag along the right side of the ring
-    const p: number[] = []; for (let k = -6; k <= 6; k++) { const t = k * 0.08; p.push(70 + 45 * Math.cos(t), 70 + 45 * Math.sin(t)); }
-    let b = a; for (let i = 0; i < 4; i++) b = pushLine(b, W, W, 8, { p, r: 14 });
+    const p: number[] = []; for (let k = -10; k <= 10; k++) { const t = k * 0.08; p.push(70 + 45 * Math.cos(t), 70 + 45 * Math.sin(t)); }
+    let b = a; for (let i = 0; i < 2; i++) b = pushLine(b, W, W, 8, { p, r: 14 });
     // the far side is unchanged
     for (let y = 40; y < 100; y++) for (let x = 0; x < 40; x++) expect(b[y * W + x]).toBe(a[y * W + x]);
     // near the brush the outline follows the circle better: compare wobble along the right side
     const err = (m: Uint8Array) => { let e = 0; for (let k = -4; k <= 4; k++) { const t = k * 0.08; let s = 0, n = 0; for (let d = 30; d < 60; d += 0.25) { const x = Math.floor(70 + d * Math.cos(t)), y = Math.floor(70 + d * Math.sin(t)); s += m[y * W + x] / 255 * d; n += m[y * W + x] / 255; } e += Math.abs(s / n - 45); } return e; };
     expect(err(b)).toBeLessThan(err(a) * 0.7);
+    // and keeps the line width (this wobble is steep, so the width straight across is a little under 8)
+    const side = (m: Uint8Array) => { let t = 0; for (let y = 40; y < 100; y++) for (let x = 100; x < 130; x++) t += m[y * W + x] / 255; return t; };
+    expect(Math.abs(side(b) - side(a)) / side(a)).toBeLessThan(0.1);
   });
 });
