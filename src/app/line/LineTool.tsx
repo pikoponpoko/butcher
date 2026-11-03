@@ -2,7 +2,8 @@
 // Levels, speck and gap settings re-run the analysis (in a worker); taps on the stage paint regions.
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref, type PointerEvent as RPointerEvent } from 'react';
 import { writePsd } from 'ag-psd';
-import { type LineArt, type LineSettings, analyze, autoLevels, hexRGB, lineAlpha, luminance, strokeWidth } from '../../core/lineart';
+import { type LineArt, type LineSettings, autoLevels, hexRGB, lineAlpha, luminance, regionsOf, strokeWidth } from '../../core/lineart';
+import { type Push, shapedLine } from '../../core/lineshape';
 import LineWorker from '../../core/lineart.worker?worker&inline';
 import type { PsdDoc } from '../../core/psdcore';
 import { AddHint, DraftInput, Lbl, Seg, StatusText, ThemeRow } from '../ui';
@@ -21,7 +22,8 @@ export type Fx = { k: 'grad'; c2: string; x0: number; y0: number; x1: number; y1
 type Tap = { x: number; y: number; c: string | null; fx?: Fx };
 // `g`: a traced sweep — one point per region it crossed (x, y, x, y…), all painted `c` (or cleared) as one step
 type Sweep = { g: number[]; c: string | null; fx?: Fx };
-type Op = Tap | Sweep | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null };
+// `push`: a ならす stroke (path, brush radius `r`) that presses the line's outline smooth across the drag
+type Op = Tap | Sweep | { j: number[] } | { rm: number[] } | { b: number[]; r: number; c: string | null } | { push: number[]; r: number };
 const isTap = (o: Op): o is Tap => 'x' in o;
 // joins in effect after replaying the history
 function joinsOf(ops: Op[]) {
@@ -29,6 +31,7 @@ function joinsOf(ops: Op[]) {
   for (const o of ops) if ('j' in o) on.push(o.j); else if ('rm' in o) { const i = on.indexOf(o.rm); if (i >= 0) on.splice(i, 1); }
   return on;
 }
+const pushesOf = (ops: Op[]): Push[] => ops.flatMap(o => 'push' in o ? [{ p: o.push, r: o.r }] : []);
 // The traced path as a join: evenly resampled and smoothed (hand shake), stretched so its ends sit on the
 // snapped line ends, and near each snapped end bent to leave along that line's direction.
 // a / b: [x, y, dx, dy] of the line end (dx, dy pointing out of the line), or null when that end didn't snap.
@@ -193,7 +196,9 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   const [la, setLa] = useState<LineArt | null>(null);
   const [running, setRunning] = useState(false);
   const [lineC, setLineC] = useState('#000000'), [baseC, setBaseC] = useState('#ffffff'), [pointC, setPointC] = useState('#a2eaba');
-  const [mode, setMode] = useState<'paint' | 'erase' | 'join' | 'pick'>('paint');
+  const [mode, setMode] = useState<'paint' | 'erase' | 'join' | 'push' | 'pick'>('paint');
+  const [smooth, setSmooth] = useState('1'), [thick, setThick] = useState('0'); // ブレ補正 off / weak / medium / strong, 太さ -1…2
+  const [pushB, setPushB] = useState(48); // ならす brush diameter, image px
   const [recent, setRecent] = useState<string[]>(loadRecent);
   const [jv, setJv] = useState(0); // bumped when the joins change
   const [drag, setDrag] = useState<number[] | null>(null); // the join or brush stroke being traced, image px
@@ -222,7 +227,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       setLa(null); setView('res');
       setSrc({ name: f.name, W, H, rgba, L, sw });
       // defaults from the drawing: specks under half a line width, breaks up to two
-      setBrush(Math.max(4, Math.round(sw))); setPer(Math.max(4, Math.round(sw / 4.5)));
+      setBrush(Math.max(4, Math.round(sw))); setPushB(Math.max(8, Math.round(sw * 3.2))); setPer(Math.max(4, Math.round(sw / 4.5)));
       setS({ ...lv, speck: Math.max(2, Math.round(sw / 2)), gap: Math.max(2, Math.round(sw * 2)) });
       getWorker()?.postMessage({ src: { L, W, H } });
       setStatus([]);
@@ -235,16 +240,19 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     const id = ++seq.current;
     const t = setTimeout(() => {
       setRunning(true);
-      const joins = joinsOf(ops.current);
+      const joins = joinsOf(ops.current), pushes = pushesOf(ops.current), shape = { smooth: +smooth, thick: +thick };
       const done = (r: LineArt) => { if (id !== seq.current) return; setLa(r); setRunning(false); };
       const w = getWorker();
       if (w) {
         const on = (e: MessageEvent) => { if (e.data?.id !== id) return; w.removeEventListener('message', on); done(e.data.la); };
-        w.addEventListener('message', on); w.postMessage({ id, s, joins });
-      } else setTimeout(() => done(analyze(src.rgba, src.W, src.H, s, src.L, joins)), 0);
+        w.addEventListener('message', on); w.postMessage({ id, s, shape, pushes, joins });
+      } else setTimeout(() => {
+        const a0 = lineAlpha(src.L, src.W, src.H, s), sw = strokeWidth(a0, src.W, src.H), a = shapedLine(a0, src.W, src.H, sw, shape, pushes);
+        done(regionsOf(a, src.W, src.H, s.gap, a === a0 ? sw : strokeWidth(a, src.W, src.H), joins));
+      }, 0);
     }, 120);
     return () => clearTimeout(t);
-  }, [src, s.black, s.white, s.speck, s.gap, jv]);
+  }, [src, s.black, s.white, s.speck, s.gap, smooth, thick, jv]);
 
   // the stage shows the composite; the separate layers are made only for output
   const shown = useRef<Uint8ClampedArray | null>(null);
@@ -348,6 +356,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
       const wasLive = live.current; live.current = 0;
       if (e.type === 'pointercancel' || q.max >= 2) { if (wasLive) repaint(); return; }
       if (mode === 'join') { addJoin(d); return; }
+      if (mode === 'push') { if (q.moved && d.length >= 4) push({ push: d, r: pushB / 2 }); return; }
       // a drag sweeps every region it crosses (or paints with the brush); a tap fills one region
       if (q.moved) {
         if (sweeping()) { const o = sweepOf(d); if (o) { if (o.c) { if (o.fx?.k === 'grad') remember(o.fx.c2); remember(o.c); } push(o); } else if (wasLive) repaint(); return; }
@@ -384,7 +393,8 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   }
   const preview = (o: Sweep) => { if (la) { shown.current = composite(la, [...ops.current, o], lineC, baseC); setVer(v => v + 1); } };
   function imgAt(cx: number, cy: number) { const r = cv.current!.getBoundingClientRect(); return { x: (cx - r.left) / r.width * W, y: (cy - r.top) / r.height * H }; }
-  const isJoin = (o: Op) => 'j' in o || 'rm' in o;
+  // ops that change the line or its regions (the analysis runs again)
+  const isJoin = (o: Op) => 'j' in o || 'rm' in o || 'push' in o;
   const push = (o: Op) => { ops.current.push(o); redo.current = []; if (isJoin(o)) setJv(v => v + 1); else repaint(); };
   // a traced join: ends that land near a loose line end snap to it and follow its direction
   function addJoin(d: number[]) {
@@ -435,6 +445,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     if (!la || !src || view === 'src') return;
     const { x, y } = imgAt(cx, cy);
     if (x < 0 || y < 0 || x >= W || y >= H) return;
+    if (mode === 'push') return;
     if (mode === 'pick') {
       const p = (Math.floor(y) * W + Math.floor(x)) * 4, d = shown.current;
       if (d && d[p + 3]) usePoint('#' + [d[p], d[p + 1], d[p + 2]].map(v => v.toString(16).padStart(2, '0')).join(''));
@@ -505,7 +516,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             {joinsOf(ops.current).map((j, i) => <polyline key={i} className="dash" points={j.join(' ')} />)}
             {drag && (mode === 'join' || (sweeping() && fill === 'solid') || mode === 'erase' && stroke === 'area' ? <polyline points={drag.join(' ')} />
               : mode === 'paint' && fill !== 'solid' ? <polyline points={[drag[0], drag[1], drag[drag.length - 2], drag[drag.length - 1]].join(' ')} />
-              : <polyline className="brush" points={drag.join(' ')} style={{ stroke: mode === 'paint' ? pointC : undefined, strokeWidth: brush * (zv?.K || fit || 1) }} />)}
+              : <polyline className="brush" points={drag.join(' ')} style={{ stroke: mode === 'paint' ? pointC : undefined, strokeWidth: (mode === 'push' ? pushB : brush) * (zv?.K || fit || 1) }} />)}
           </svg>}
           <AddHint hidden={!!src} formats="PNG · JPEG · WebP" />
         </div>
@@ -525,21 +536,26 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             <div className="prop lvrow"><span><Lbl>{tr('白')}</Lbl></span>{level('white')}</div>
             <div className="prop pair"><span><Lbl>{tr('ごみ取り')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="0" max="200" value={s.speck} onDraft={num('speck', 0, 200)} />px</span></div>
             <div className="prop pair"><span><Lbl>{tr('隙間')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="0" max="400" value={s.gap} onDraft={num('gap', 0, 400)} />px</span></div>
+            <div className="prop shape"><span><Lbl>{tr('ブレ補正')}</Lbl></span><Seg id="lSmooth" value={smooth} options={[['0', tr('オフ')], ['1', tr('弱')], ['2', tr('中')], ['3', tr('強')]]} onChange={setSmooth} /></div>
+            <div className="prop shape"><span><Lbl>{tr('太さ')}</Lbl></span><Seg id="lThick" value={thick} options={[['-1', tr('細')], ['0', tr('元')], ['1', tr('太1')], ['2', tr('太2')]]} onChange={setThick} /></div>
           </div>
           <div className="sec">
-            <div className="prop use"><Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')], ['join', tr('つなぐ')]]} onChange={setMode} /></div>
-            <div className="prop use"><Seg id="lFill" value={fill} options={[['solid', tr('ベタ')], ['grad', tr('グラデ')], ['tone', tr('トーン')]]} onChange={v => { setFill(v); setMode('paint'); }} /></div>
-            {fill === 'tone' && <>
+            <div className="prop use"><Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')], ['join', tr('つなぐ')], ['push', tr('ならす')]]} onChange={setMode} /></div>
+            <div className="prop use" hidden={mode === 'push'}><Seg id="lFill" value={fill} options={[['solid', tr('ベタ')], ['grad', tr('グラデ')], ['tone', tr('トーン')]]} onChange={v => { setFill(v); setMode('paint'); }} /></div>
+            {fill === 'tone' && mode !== 'push' && <>
               <div className="prop pair"><span><Lbl>{tr('濃度')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="90" value={cov} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setCov(Math.max(1, Math.min(90, n))); }} />%</span></div>
               <div className="prop pair"><span><Lbl>{tr('間隔')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="3" max="200" value={per} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setPer(Math.max(3, Math.min(200, n))); }} />px</span></div>
             </>}
-            <div className="prop pair" hidden={fill !== 'solid' && mode === 'paint'}><span><Lbl>{tr('なぞる')}</Lbl></span>
+            <div className="prop pair" hidden={mode !== 'push'}><span><Lbl>{tr('ブラシ')}</Lbl></span>
+              <span className="unit"><DraftInput className="n" type="number" min="2" max="1000" aria-label={tr('ブラシ')} value={pushB} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setPushB(Math.max(2, Math.min(1000, n))); }} />px</span>
+            </div>
+            <div className="prop pair" hidden={(fill !== 'solid' && mode === 'paint') || mode === 'push'}><span><Lbl>{tr('なぞる')}</Lbl></span>
               <span className="unit">
                 <Seg id="lStroke" value={stroke} options={[['area', tr('領域')], ['brush', tr('ブラシ')]]} onChange={setStroke} />
                 {stroke === 'brush' && <><DraftInput className="n" type="number" min="1" max="500" aria-label={tr('ブラシ')} value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</>}
               </span>
             </div>
-            <div className="prop pair cpick" hidden={fill === 'tone'}><span><Lbl>{tr('色')}</Lbl></span>
+            <div className="prop pair cpick" hidden={fill === 'tone' || mode === 'push'}><span><Lbl>{tr('色')}</Lbl></span>
               <span className="unit">
                 <input type="color" className="col" aria-label={tr('色')} value={pointC} onChange={e => usePoint(e.target.value)} />
                 {fill === 'grad' && <input type="color" className="col" id="lCol2" aria-label={tr('色') + ' 2'} value={pointC2} onChange={e => { setPointC2(e.target.value); setMode('paint'); }} />}
@@ -548,7 +564,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
                 </button>
               </span>
             </div>
-            {recent.length > 0 && <div className="prop recent"><span><Lbl>{tr('最近')}</Lbl></span><span className="sws">
+            {recent.length > 0 && mode !== 'push' && <div className="prop recent"><span><Lbl>{tr('最近')}</Lbl></span><span className="sws">
               {recent.map(c => <button key={c} className="swc" aria-label={c} title={c} aria-pressed={c === pointC} style={{ background: c }} onClick={() => usePoint(c)} />)}
             </span></div>}
             <label className="prop pair"><span><Lbl>{tr('ベース')}</Lbl></span><input type="color" className="col" value={baseC} onChange={e => setBaseC(e.target.value)} /></label>

@@ -100,7 +100,7 @@ function components(mask: Uint8Array, W: number, H: number, weight?: Uint8Array)
 
 // Runs of `mask` row by row, joined into 4-connected components (fast on large, mostly uniform areas).
 // Returns each run as [y·W + x0, length, component] and the components' sizes (or weight sums).
-function runComponents(mask: Uint8Array, W: number, H: number, weight?: Uint8Array) {
+export function runComponents(mask: Uint8Array, W: number, H: number, weight?: Uint8Array) {
   const runs: number[] = [], par: number[] = [];
   const find = (a: number) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
   let prevA = 0, prevB = 0;
