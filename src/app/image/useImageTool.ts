@@ -1,6 +1,6 @@
 // Image tool state. Documents are large mutable objects (parsed PSD trees), so they stay mutable and
 // `bump()` re-renders after an in-place change.
-import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { type Doc, type Node, type Slice, type Snap, SRC_RE, TooLarge, hiddenKey, makeDoc, restore, sameSnap, snap, clampSlice, curSlice, nextSliceName, newSliceId, openFile, persistSlices, renderNode, safe, sliceData, stem, summarize } from './model';
 import { type Rect, detectSlices } from './panels';
 import { type Settings, type Status, exportAll, saveCurrent } from './exporter';
@@ -16,14 +16,31 @@ const INIT: Settings = {
   prefix: '', suffix: '', hidden: false, tree: true, slFill: false, allFiles: false, incWarn: false, out: 'zip',
 };
 
+// export settings are remembered across reloads (the slice pane's mode is not: it follows the pane)
+const SET_KEY = 'img:settings';
+function loadSettings(): Settings {
+  const o = { ...INIT };
+  try {
+    const v = JSON.parse(localStorage.getItem(SET_KEY) || '{}');
+    for (const k of Object.keys(INIT) as (keyof Settings)[]) {
+      const x = v[k], d = INIT[k];
+      if (x !== undefined && typeof x === typeof d && Array.isArray(x) === Array.isArray(d)) (o as Record<string, unknown>)[k] = x;
+    }
+    if (o.mode === 'slice') o.mode = INIT.mode;
+    if (o.out === 'dir' && !('showDirectoryPicker' in window)) o.out = INIT.out;
+  } catch {}
+  return o;
+}
+
 export function useImageTool() {
   const [ver, bump] = useReducer((x: number) => x + 1, 0);
   const docs = useRef<Doc[]>([]).current;
   const [cur, setCur] = useState(0);
   const [sel, setSel] = useState<Node | null>(null);
   const [pane, setPaneState] = useState<Pane>('layer');
-  const [o, setO] = useState<Settings>(INIT);
-  const prevMode = useRef<Settings['mode']>('folder');
+  const [o, setO] = useState<Settings>(loadSettings);
+  const prevMode = useRef<Settings['mode']>(o.mode);
+  useEffect(() => { try { localStorage.setItem(SET_KEY, JSON.stringify({ ...o, mode: o.mode === 'slice' ? prevMode.current : o.mode })); } catch {} }, [o]);
   const [status, setStatus] = useState<Status>([]);
   const [busy, setBusy] = useState(false);
   const [outDir, setOutDir] = useState('showDirectoryPicker' in window);

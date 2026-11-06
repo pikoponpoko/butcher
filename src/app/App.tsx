@@ -90,6 +90,13 @@ export function App() {
   const pickImages = () => pickFiles('butcher-image', IMG_ACCEPT, true, fileRef.current, fs => t.openFiles(fs));
   const [gifSt, setGifSt] = useState<GifState>({ open: false, ready: false, busy: false });
   live.current.gifBusy = gifSt.busy;
+  // ask before leaving (reload, back, closing the tab) while files are open
+  const working = t.docs.length > 0 || gifSt.open || lineSt.open;
+  useEffect(() => {
+    if (!working) return;
+    const ask = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    addEventListener('beforeunload', ask); return () => removeEventListener('beforeunload', ask);
+  }, [working]);
 
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : tool === 'line' ? ' tool-line' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>

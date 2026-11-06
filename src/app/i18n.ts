@@ -53,7 +53,7 @@ const EN: Record<string, string> = {
   '署名': 'Signature', '署名を入れる': 'Add signature', '小': 'S', '中': 'M', '大': 'L', '白': 'White', '黒': 'Black',
   '非表示レイヤーを含む': 'Include hidden layers', 'フォルダ階層を保持': 'Keep folder structure', '透明部分を周囲の色で補完': 'Fill transparent areas with edge color', '隣の絵を消す': 'Remove neighboring drawings',
   '開いているファイルをすべて処理': 'Process all open files', '{n} ファイル': '{n} files', '警告あり {n}': '{n} with warnings', '警告のある画像も書き出す': 'Export images with warnings',
-  '個別': 'Separate', 'フォルダ|out': 'Folder', '書き出し': 'Export', '標準': 'Standard', '13インチ': '13-inch', '11インチ': '11-inch',
+  '個別': 'Separate', 'フォルダに保存': 'Save to folder', '書き出し': 'Export', '標準': 'Standard', '13インチ': '13-inch', '11インチ': '11-inch',
   // image status
   '{f}: 読み込めません（{e}）': '{f}: can’t open ({e})', '枠や絵が見つかりません': 'No frames or drawings found', '{n} 件のスライスを追加': '{n} slices added', 'スライスがありません': 'No slices',
   'スライス設定を保存': 'Slices saved', 'キャンバスサイズが異なります（{w}×{h}）': 'Canvas size differs ({w}×{h})', '{n} 件のスライスを読込': '{n} slices loaded',
@@ -71,12 +71,12 @@ const EN: Record<string, string> = {
   '合成モードは未検証（通常として処理）': 'Blend mode unverified (treated as Normal)', 'CLIP STUDIOのマスクは未検証': 'CLIP STUDIO masks unverified', 'レイヤーの位置情報は未検証': 'Layer position unverified',
   'この種類のレイヤーは未検証': 'Layer type unverified', 'タイル配置を読み取れません': 'Can’t read the tile layout', 'この色形式は未対応': 'Unsupported color format',
   // GIF / video
-  'GIF書き出し設定': 'GIF export settings', '元': 'Orig', '元（{f}）': 'Orig ({f})', '自由': 'Free', '結果': 'Result', 'カスタム': 'Custom', '再生': 'Play', '停止': 'Pause', '透明': 'Clear', '背景': 'Background',
+  'GIF書き出し設定': 'GIF export settings', '用途': 'Use', '比率': 'Ratio', '元': 'Orig', '元（{f}）': 'Orig ({f})', '自由': 'Free', '結果': 'Result', 'カスタム': 'Custom', '再生': 'Play', '停止': 'Pause', '透明': 'Clear', '背景': 'Background',
   '範囲': 'Range', '開始': 'Start', '終了': 'End', '秒': 's', '速度': 'Speed', 'ループ': 'Loop', '無限': 'Forever', '1回': 'Once', '2回': '2 times', '3回': '3 times', '回': 'times',
   '目標サイズ': 'Target size', 'なし': 'None', 'ドット': 'Pixel', 'ドットの大きさ': 'Pixel size', '色数': 'Colors', '{n}色': '{n} colors',
   'このまま保存': 'Save anyway',
   '一括書き出し': 'Export all', '選択中を保存': 'Save selected', '中止': 'Cancel', '中止しました': 'Canceled', '{n} ファイルを書き出して中止しました': 'Canceled after exporting {n} files',
-  '出力': 'Output', '音声なしで出力': 'Without audio', 'ファイルは端末内で処理されます': 'Files are processed on this device',
+  '出力': 'Output', '音声なしで出力': 'Without audio',
   'CLIP STUDIO形式は非公式対応です。検証済みは通常レイヤー・表示・不透明度・フォルダのみ': 'CLIP STUDIO files are read unofficially. Only normal layers, visibility, opacity and folders are verified',
   'このまま開く': 'Open anyway',
   '{f}（{w}×{h}）は処理に約 {m} のメモリが必要です。画像を縮小するか、メモリの多い端末で開いてください': '{f} ({w}×{h}) needs about {m} of memory. Make it smaller or open it on a device with more memory',

@@ -1,5 +1,5 @@
 // Desktop (Windows / macOS) shell: serves the built browser app from ./app over app://butcher/.
-const { app, BrowserWindow, Menu, ipcMain, nativeTheme, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, net, protocol, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -25,6 +25,13 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://butcher/')) { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); } });
   win.webContents.on('did-start-loading', () => { ready = false; });
+  // the page asks before closing while files are open (beforeunload); Electron needs the dialog here
+  win.webContents.on('will-prevent-unload', (e) => {
+    const ja = app.getLocale().startsWith('ja');
+    const r = dialog.showMessageBoxSync(win, { type: 'question', buttons: ja ? ['閉じる', 'キャンセル'] : ['Close', 'Cancel'], defaultId: 1, cancelId: 1,
+      message: ja ? '開いているファイルを閉じますか？' : 'Close the open files?' });
+    if (r === 0) e.preventDefault();
+  });
   win.loadURL('app://butcher/index.html');
 }
 
