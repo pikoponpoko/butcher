@@ -2,7 +2,7 @@
   "name": "butcher-desktop",
   "productName": "Butcher",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Butcher",
   "author": "pikoponpoko",
   "main": "main.cjs",
