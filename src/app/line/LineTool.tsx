@@ -210,6 +210,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
   const [fmt, setFmt] = useState<'psd' | 'png'>('psd');
   const [status, setStatus] = useState<Status>([]);
   const [busy, setBusy] = useState(false);
+  const [full, setFull] = useState(false); // the stage over the whole window, with the paint tools under it
   const ops = useRef<Op[]>([]), redo = useRef<Op[]>([]);
   const seq = useRef(0);
 
@@ -465,6 +466,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     if (!active) return;
     const key = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
+      if (e.key === 'Escape' && full) { setFull(false); e.preventDefault(); return; }
       if (!(e.ctrlKey || e.metaKey) || e.altKey || (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName))) return;
       const k = e.key.toLowerCase();
       if (k === 'z' && !e.shiftKey) step(true); else if ((k === 'z' && e.shiftKey) || k === 'y') step(false); else return;
@@ -500,10 +502,26 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     </span>
   );
   const ready = !!src && !!la;
+  const colors = (
+    <span className="unit">
+                <input type="color" className="col" aria-label={tr('色')} value={pointC} onChange={e => usePoint(e.target.value)} />
+                {fill === 'grad' && <input type="color" className="col" id="lCol2" aria-label={tr('色') + ' 2'} value={pointC2} onChange={e => { setPointC2(e.target.value); setMode('paint'); }} />}
+                <button className="ib" id="lPick" aria-label={tr('スポイト')} title={tr('スポイト')} aria-pressed={mode === 'pick'} onClick={() => setMode(mode === 'pick' ? 'paint' : 'pick')}>
+                  <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10.5 2.5l3 3M9 4l3 3M11.2 5.8L5 12l-2.5.8.8-2.5 6.2-6.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
+                </button>
+              </span>
+  );
+  const modes = <Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')], ['join', tr('つなぐ')], ['push', tr('ならす')]]} onChange={setMode} />;
+  const fullBtn = (
+    <button className="ib" id="lFull" aria-label={tr(full ? '閉じる' : '大きく表示')} title={tr(full ? '閉じる' : '大きく表示')} onClick={() => setFull(!full)}>
+      {full ? <svg width="16" height="16" viewBox="0 0 16 16"><path d="M6.5 2.5v4h-4M9.5 2.5v4h4M6.5 13.5v-4h-4M9.5 13.5v-4h4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
+        : <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2.5 6.5v-4h4M13.5 6.5v-4h-4M2.5 9.5v4h4M13.5 9.5v4h-4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>}
+    </button>
+  );
   const sum = src ? `${src.W}×${src.H}` : '';
 
   return (
-    <section className={'gif line' + (src ? ' on' : '')} id="line">
+    <section className={'gif line' + (src ? ' on' : '') + (full && src ? ' full' : '')} id="line">
       <main className="center" style={{ display: 'flex' }}>
         <div className={'stage' + (src ? zv ? ' zoomed' : '' : ' pick')} id="lStage" ref={stageRef} onClick={src ? undefined : onPick}
           style={src ? { '--sw': src.W, '--sh': src.H } as CSSProperties : undefined}
@@ -520,13 +538,24 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
           </svg>}
           <AddHint hidden={!!src} formats="PNG · JPEG · WebP" />
         </div>
-        <div className="status">
+        {full && src ? <div className="status tools">
+          {modes}
+          {fill !== 'tone' && mode !== 'push' && colors}
+          <button className="ib" aria-label={tr('元に戻す')} title={tr('元に戻す')} onClick={() => step(true)}>
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M5.5 3.5l-3 3 3 3M2.5 6.5h7a4 4 0 010 8h-2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
+          </button>
+          <button className="ib" aria-label={tr('やり直し')} title={tr('やり直し')} onClick={() => step(false)}>
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10.5 3.5l3 3-3 3M13.5 6.5h-7a4 4 0 000 8h2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
+          </button>
+          {fullBtn}
+        </div> : <div className="status">
           <span id="lName">{src ? src.name : ''}</span>
           <span id="lSize" className="num">{sum}</span>
           <span id="lState" className="muted">{running ? tr('処理中') : ''}</span>
           <Seg id="lView" hidden={!src} value={view} options={[['src', tr('元')], ['res', tr('結果')]]} onChange={setView} />
+          {src && fullBtn}
           <button className="link" id="lToImg" hidden={!src} disabled={!ready || busy} onClick={toImage}><Lbl>{tr('画像タブで開く')}</Lbl></button>
-        </div>
+        </div>}
       </main>
       <aside className="panel inspector" aria-label={tr('線画')}>
         <div className="insp">
@@ -540,7 +569,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             <div className="prop shape"><span><Lbl>{tr('太さ')}</Lbl></span><Seg id="lThick" value={thick} options={[['-1', tr('細')], ['0', tr('元')], ['1', tr('太1')], ['2', tr('太2')]]} onChange={setThick} /></div>
           </div>
           <div className="sec">
-            <div className="prop use"><Seg id="lMode" value={mode} options={[['paint', tr('塗る')], ['erase', tr('消す')], ['join', tr('つなぐ')], ['push', tr('ならす')]]} onChange={setMode} /></div>
+            <div className="prop use">{!full && modes}</div>
             <div className="prop use" hidden={mode === 'push'}><Seg id="lFill" value={fill} options={[['solid', tr('ベタ')], ['grad', tr('グラデ')], ['tone', tr('トーン')]]} onChange={v => { setFill(v); setMode('paint'); }} /></div>
             {fill === 'tone' && mode !== 'push' && <>
               <div className="prop pair"><span><Lbl>{tr('濃度')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="90" value={cov} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setCov(Math.max(1, Math.min(90, n))); }} />%</span></div>
@@ -556,13 +585,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
               </span>
             </div>
             <div className="prop pair cpick" hidden={fill === 'tone' || mode === 'push'}><span><Lbl>{tr('色')}</Lbl></span>
-              <span className="unit">
-                <input type="color" className="col" aria-label={tr('色')} value={pointC} onChange={e => usePoint(e.target.value)} />
-                {fill === 'grad' && <input type="color" className="col" id="lCol2" aria-label={tr('色') + ' 2'} value={pointC2} onChange={e => { setPointC2(e.target.value); setMode('paint'); }} />}
-                <button className="ib" id="lPick" aria-label={tr('スポイト')} title={tr('スポイト')} aria-pressed={mode === 'pick'} onClick={() => setMode(mode === 'pick' ? 'paint' : 'pick')}>
-                  <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10.5 2.5l3 3M9 4l3 3M11.2 5.8L5 12l-2.5.8.8-2.5 6.2-6.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
-                </button>
-              </span>
+              {!full && colors}
             </div>
             {recent.length > 0 && mode !== 'push' && <div className="prop recent"><span><Lbl>{tr('最近')}</Lbl></span><span className="sws">
               {recent.map(c => <button key={c} className="swc" aria-label={c} title={c} aria-pressed={c === pointC} style={{ background: c }} onClick={() => usePoint(c)} />)}
