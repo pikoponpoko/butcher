@@ -121,7 +121,7 @@ button .dual > * { justify-self: center; } .pickb .dual > * { justify-self: star
 .warnbox { position: absolute; left: 12px; right: 12px; top: 12px; display: grid; gap: 2px; padding: 8px 10px; border-radius: 3px; background: var(--panel); border: 1px solid var(--warn); color: var(--warn); max-height: 40%; overflow: auto; }
 .status { height: 29px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); white-space: nowrap; overflow: hidden; }
 .status #pvName { color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.status #gName, .status #lName { overflow: hidden; text-overflow: ellipsis; min-width: 0; } .status > :not(#gName):not(#pvName):not(#lName) { flex: none; }
+.status #gName, .status #lName { overflow: hidden; text-overflow: ellipsis; min-width: 0; } .status:not(.tools) > :not(#gName):not(#pvName):not(#lName) { flex: none; }
 .status #lView { margin-left: auto; }
 
 .insp { overflow: auto; flex: 0 1 auto; }
@@ -383,4 +383,28 @@ svg.jn circle { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-eff
   .line .insp .prop.pair > input.col, .line .insp .prop.cpick input.col { width: 100%; min-width: 48px; justify-self: stretch; }
   .line .insp .prop.cpick > .unit { display: flex; min-width: 0; }
   .line .insp .sec > .prop.recent { grid-template-columns: 44px minmax(0, 1fr); }
+}
+
+/* 線画: preview over the whole window, paint tools under it */
+.app .gif.line.full { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--bg); }
+.gif.line.full > .inspector { display: none; }
+.gif.line.full > .center { flex: 1 1 auto; }
+.gif.line.full #lStage { flex: 1 1 auto; height: auto; min-height: 0; padding: 8px; }
+.gif.line.full .status.tools { display: flex; height: auto; min-height: 0; gap: 8px; padding: 9px 12px calc(9px + env(safe-area-inset-bottom, 0px)); }
+.status.tools > * { flex: none; } .status.tools > .seg { flex: 0 1 auto; min-width: 0; }
+.status.tools > .seg button { padding: 0 12px; }
+.status.tools > .unit { gap: 8px; }
+.status.tools input.col { width: 48px; height: 24px; padding: 2px; box-sizing: border-box; background: var(--field); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; }
+.status.tools input.col::-webkit-color-swatch-wrapper { padding: 0; } .status.tools input.col::-webkit-color-swatch { border: 0; border-radius: 1px; }
+.status.tools input.col::-moz-color-swatch { border: 0; border-radius: 1px; }
+.status.tools > #lFull { margin-left: auto; }
+.status > #lFull + .link { margin-left: -4px; }
+@media (max-width: 640px) {
+  .line .status:not(.tools) { grid-template-columns: minmax(0, 1fr) auto auto auto auto; }
+  .line .status:not(.tools) > #lFull { grid-column: 4; grid-row: 1 / span 2; align-self: center; margin: 0; }
+  .line .status:not(.tools) > .link { grid-column: 5; }
+  .gif.line.full .status.tools { flex-wrap: wrap; row-gap: 8px; padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .status.tools > .seg { display: flex; flex: 1 0 100%; box-sizing: border-box; }
+  .status.tools > .seg button { flex: 1 1 0; padding: 0 4px; }
+  .status.tools > #lFull { margin-left: auto; }
 }
