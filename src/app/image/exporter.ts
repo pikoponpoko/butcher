@@ -1,11 +1,11 @@
 // Image export: encode composites (trim / slice crop / resize) and write them to a ZIP, single files or a folder.
-import JSZip from 'jszip';
 import * as PsdCore from '../../core/psdcore';
 import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import { tr } from '../i18n';
 import { type Sign, drawSign, getSign, signReady } from '../sign';
 import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
 import { isolateDrawing } from './isolate';
+import { loadZip } from '../lazy';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, makeNamer, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
 export interface Settings {
@@ -175,7 +175,7 @@ export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice 
   for (const v of vs) { const f = await encode(o, r.rgba, r.W, r.H, s, v); if (!f) return [{ t: tr('空の画像です'), c: 'err' }]; files.push(...f); }
   // a Favicon set goes out as one zip; SNS sizes are saved one by one
   if (o.fmt === 'ico') {
-    const zip = new JSZip(); for (const f of files) zip.file(name + f.tail, f.blob);
+    const zip = new (await loadZip())(); for (const f of files) zip.file(name + f.tail, f.blob);
     const res = await saveBlob(name + '.zip', await zip.generateAsync({ type: 'blob' })); if (res !== 'ok') return [{ t: saveFailText(res) }];
   } else { const res = await saveFiles(files.map(f => ({ name: name + f.tail, data: f.blob }))); if (res !== 'ok') return [{ t: saveFailText(res) }]; }
   return [{ t: tr('{n} ファイルを書き出し', { n: files.length }), c: 'ok' }];
@@ -186,7 +186,7 @@ declare global { function showDirectoryPicker(o?: { id?: string; mode?: string }
 // The job is fixed when it starts: settings `o`, the documents, their export targets (slices copied, names resolved)
 // and the signature. `signal` cancels between files.
 export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) => void, noDir: () => void, signal?: AbortSignal): Promise<Status> {
-  const zip = new JSZip(), report: string[] = [], vs = variantsOf(o), sign = getSign();
+  const zip = new (await loadZip())(), report: string[] = [], vs = variantsOf(o), sign = getSign();
   const jobs = docs.map(d => ({ d, name: d.name, ts: targetsOf(d, o.mode, o.hidden).map(t => ({ ...t, s: t.s && { ...t.s }, label: t.s ? t.s.name : nameOf(t.n!) })) }));
   if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
   let dir: FileSystemDirectoryHandle | null = null;

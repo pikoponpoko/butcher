@@ -1,7 +1,6 @@
 // 線画 tool: a scanned line drawing → line / point color / base layers.
 // Levels, speck and gap settings re-run the analysis (in a worker); taps on the stage paint regions.
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref, type PointerEvent as RPointerEvent } from 'react';
-import { writePsd } from 'ag-psd';
 import { type LineArt, type LineSettings, autoLevels, hexRGB, lineAlpha, luminance, regionsOf, strokeWidth } from '../../core/lineart';
 import { type Push, shapedLine } from '../../core/lineshape';
 import LineWorker from '../../core/lineart.worker?worker&inline';
@@ -9,6 +8,7 @@ import type { PsdDoc } from '../../core/psdcore';
 import { AddHint, DraftInput, Lbl, Seg, StatusText, ThemeRow } from '../ui';
 import { tr } from '../i18n';
 import { saveFiles, saveFailText } from '../save';
+import { loadPsd } from '../lazy';
 import type { Status } from '../image/exporter';
 
 // send(): hands the finished layers to the image tool when they changed since the last send
@@ -482,7 +482,8 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
     setBusy(true);
     try {
       const name = `${stem()}.${fmt}`;
-      const data = fmt === 'psd' ? new Blob([writePsd(layeredDoc(L, src.W, src.H) as any, { noBackground: true } as any)], { type: 'image/vnd.adobe.photoshop' }) : await pngOf(L.all, src.W, src.H);
+      const writePsd = fmt === 'psd' ? (await loadPsd()).writePsd : null;
+      const data = writePsd ? new Blob([writePsd(layeredDoc(L, src.W, src.H) as any, { noBackground: true } as any)], { type: 'image/vnd.adobe.photoshop' }) : await pngOf(L.all, src.W, src.H);
       const r = await saveFiles([{ name, data }]);
       setStatus(r === 'ok' ? [{ t: tr('{s} を書き出し', { s: name }), c: 'ok' }] : [{ t: saveFailText(r), c: 'err' }]);
     } catch (e: any) { setStatus([{ t: tr('エラー: {e}', { e: String(e?.message || e) }), c: 'err' }]); }
@@ -548,7 +549,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10.5 3.5l3 3-3 3M13.5 6.5h-7a4 4 0 000 8h2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
           </button>
           {fullBtn}
-        </div> : <div className="status">
+        </div> : <div className="status" hidden={!src}>
           <span id="lName">{src ? src.name : ''}</span>
           <span id="lSize" className="num">{sum}</span>
           <span id="lState" className="muted">{running ? tr('処理中') : ''}</span>

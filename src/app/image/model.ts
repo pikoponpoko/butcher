@@ -1,10 +1,10 @@
 // Image tool data: open documents, layer names, slices and export targets. No React here.
-import { readPsd } from 'ag-psd';
 import type { SqlJsStatic } from 'sql.js';
 import * as PsdCore from '../../core/psdcore';
 import type { PsdDoc, PsdNode } from '../../core/psdcore';
 import { readClip } from '../../core/clipreader';
 import { compositeBytes, memBudget } from '../memory';
+import { loadPsd } from '../lazy';
 
 // Layer nodes carry UI-only fields next to the parsed data.
 export interface Node extends PsdNode { children?: Node[]; _id: number; _parent: Node | null; _rename?: string; _thumb?: string | null }
@@ -55,6 +55,7 @@ export async function openFile(name: string, buf: ArrayBuffer, force = false): P
   }
   // PSD / PSB header: height and width at bytes 14 and 18 (big-endian), read before the layers are decoded
   if (buf.byteLength >= 26) { const v = new DataView(buf); checkSize(v.getUint32(18), v.getUint32(14), force); }
+  const { readPsd } = await loadPsd();
   return makeDoc(name, readPsd(buf, { useImageData: true }) as PsdDoc);
 }
 export function makeDoc(name: string, psd: PsdDoc): Doc {

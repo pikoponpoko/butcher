@@ -8,7 +8,7 @@ import { type Sign, type SignColor, contrastColor, drawSign, getSign, sampleUnde
 import { fmtMem, memBudget } from '../memory';
 import { type Group, type Preset, PICKS_DEFAULT, SERVICES, VIDEO_PRESETS, X_GIF, picked, toggleId } from '../presets';
 import { tr } from '../i18n';
-import JSZip from 'jszip';
+import { loadZip } from '../lazy';
 import { encodeGif, encodeMp4, encodeWebp, gifLibNow, loadGif, webpOK, type EncodeOpts, type Frames } from './encoders';
 
 type Fmt = 'gif' | 'webp' | 'mp4';
@@ -521,7 +521,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
       }
       if (u === 'sns' || u === 'wp') {
         const sizes = presetSizes();
-        const zip = new JSZip(), base = s.name.replace(/\.[^.]+$/, ''), each: { name: string; data: Blob }[] = []; let over = 0;
+        const zip = new (await loadZip())(), base = s.name.replace(/\.[^.]+$/, ''), each: { name: string; data: Blob }[] = []; let over = 0;
         for (let j = 0; j < sizes.length; j++) {
           const z = sizes[j], { best, ok } = await encodeAt(z.w, z.h, t => status(`${j + 1}/${sizes.length} ${t}`));
           if (!ok) over++;
@@ -640,7 +640,7 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
           </div>
           <span className="num" id="gTime">{s.dur ? `${s.dur.toFixed(2)}s` : ''}</span>
         </div>
-        <div className="status">
+        <div className="status" hidden={!s.v}>
           <span id="gName">{s.v ? `${s.name}  ${s.sw}×${s.sh}` : ''}</span>
           {cr && !showRes && <span id="gCropInfo" className="num">{`${Math.round(cr.w)}×${Math.round(cr.h)}  x${Math.round(cr.x)} y${Math.round(cr.y)}`}</span>}
           <span id="gOut" className="num" style={{ marginLeft: 'auto' }}>{s.result ? fmtMB(s.result.size) : ''}</span>
@@ -652,10 +652,10 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
         <div className="insp">
           <fieldset className="lock" disabled={s.busy}>
           <div className="sec" id="gHeadSec">
-            <div className="prop use"><Seg id="gUse" value={u} options={[['custom', tr('カスタム')], ['web', 'Web'], ['sns', tr('SNS')], ['wp', tr('壁紙')]]} onChange={setUse} /></div>
+            <div className="prop" id="gUseRow"><span><Lbl>{tr('用途')}</Lbl></span><Seg id="gUse" value={u} options={[['custom', tr('カスタム')], ['web', 'Web'], ['sns', tr('SNS')], ['wp', tr('壁紙')]]} onChange={setUse} /></div>
             <div className="prop" id="gFmtRow" hidden={u === 'wp'}><span><Lbl>{tr('形式')}</Lbl></span><Seg id="gFmt" value={s.fmt} options={[['gif', 'GIF'], ['webp', 'WebP'], ['mp4', 'MP4']]}
               hiddenValues={u === 'web' ? ['mp4'] : u === 'sns' ? ['webp'] : u === 'wp' ? ['gif', 'webp'] : []} onChange={setFmt} /></div>
-            <div className="prop use" id="gRatioRow" hidden={sets}><Seg id="gRatio" value={s.ratio} options={RATIOS.map(([r, l]) => [r, tr(l)])} onChange={setRatio} /></div>
+            <div className="prop" id="gRatioRow" hidden={sets}><span><Lbl>{tr('比率')}</Lbl></span><Seg id="gRatio" value={s.ratio} options={RATIOS.map(([r, l]) => [r, tr(l)])} onChange={setRatio} /></div>
           </div>
           <div className="sec wh">
             {sets && SERVICES[u].filter(([svc]) => !(s.fmt === 'gif' && svc === 'ig')).map(([svc, label]) => (

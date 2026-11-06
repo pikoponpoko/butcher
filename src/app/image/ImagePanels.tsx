@@ -459,12 +459,12 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
         {!d && !drop && <AddHint formats="PSD · PSB · CLIP · PNG · JPEG · WebP · GIF · BMP" />}
         <div className="drop" id="drop" hidden={!drop}>{tr('ここにドロップ')}</div>
       </div>
-      <div className="status">
+      <div className="status" hidden={!d}>
         <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
         <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{showOut ? (out ? `${out.w}×${out.h}` : '') : sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) : ''}</span>
         <span id="pvState">{pv && ws.length > 0 && <span className="warn">{tr('警告 {n}', { n: ws.length })}</span>}</span>
         <Seg id="pvView" hidden={!d} value={showOut ? 'out' : 'src'} options={[['src', tr('元')], ['out', tr('出力')]]} onChange={v => setOutView(v === 'out')} />
-        <button className="link" id="saveOne" disabled={!d || t.busy} onClick={t.saveOne}><Lbl>{tr('選択中を保存')}</Lbl></button>
+        <button className="link" id="saveOne" hidden={!d} disabled={t.busy} onClick={t.saveOne}><Lbl>{tr('選択中を保存')}</Lbl></button>
       </div>
     </main>
   );
@@ -513,7 +513,7 @@ export function Inspector({ t }: { t: ImageTool }) {
           {sw('allFiles', 'allFiles', tr('開いているファイルをすべて処理'))}
         </div>
         </fieldset>
-        <div className="sec">
+        <div className="sec theme-sec">
           <ThemeRow />
         </div>
       </div>
@@ -523,10 +523,12 @@ export function Inspector({ t }: { t: ImageTool }) {
         <fieldset className="lock" disabled={t.busy}>
         {sw('incWarn', 'incWarn', tr('警告のある画像も書き出す'), undefined, !t.summary.w)}
         <div className="act">
-          <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', tr('個別')], ['dir', tr('フォルダ|out')]]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
+          <Seg id="out" value={o.out} options={[['zip', 'ZIP'], ['each', tr('個別')], ['dir', tr('フォルダに保存')]]} hiddenValues={t.outDir ? [] : ['dir']} onChange={v => set('out', v)} />
         </div>
         </fieldset>
       </div>
+      {/* phones / tablets: the theme goes below the output choice, so export settings stay together */}
+      <div className="insp theme-end"><div className="sec"><ThemeRow /></div></div>
     </aside>
   );
 }
