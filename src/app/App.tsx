@@ -119,7 +119,7 @@ export function App() {
           <button className="btn line-only" id="lAdd" disabled={lineSt.busy} onClick={pickLine}><Swap labels={['開く', '追加']} at={0} /></button>
           <button className="btn gif-only" id="gAdd" disabled={gifSt.busy} onClick={pickVideo}><Swap labels={['開く', '追加']} at={gifSt.open ? 1 : 0} /></button>
           {/* while an export runs the same button cancels it */}
-          <button className="btn primary img-only" id="export" disabled={!t.busy && !t.doc} onClick={t.busy ? t.cancel : t.doExport}><Swap labels={['一括書き出し', '中止']} at={t.busy ? 1 : 0} /></button>
+          <button className="btn primary img-only" id="export" disabled={!t.busy && (!t.doc || !t.summary.n)} onClick={t.busy ? t.cancel : t.doExport}><Swap labels={['一括書き出し', '中止']} at={t.busy ? 1 : 0} /></button>
           <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready && !gifSt.busy} onClick={() => gifSt.busy ? gif.current?.cancel() : gif.current?.export()}><Swap labels={['書き出し', '中止']} at={gifSt.busy ? 1 : 0} /></button>
           <button className="btn primary line-only" id="lExport" disabled={!lineSt.open || lineSt.busy} onClick={() => line.current?.export()}><Swap labels={['書き出し', '中止']} at={0} /></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}

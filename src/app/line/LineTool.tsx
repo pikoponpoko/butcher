@@ -555,7 +555,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
           <span id="lState" className="muted">{running ? tr('処理中') : ''}</span>
           <Seg id="lView" hidden={!src} value={view} options={[['src', tr('元')], ['res', tr('結果')]]} onChange={setView} />
           {src && fullBtn}
-          <button className="link" id="lToImg" hidden={!src} disabled={!ready || busy} onClick={toImage}><Lbl>{tr('画像タブで開く')}</Lbl></button>
+          <button className="link ic" id="lToImg" hidden={!src} disabled={!ready || busy} aria-label={tr('画像タブで開く')} title={tr('画像タブで開く')} onClick={toImage}><svg width="13" height="13" viewBox="0 0 13 13"><path d="M5.5 1.5h-4v10h10v-4M8 1.5h3.5V5M11.5 1.5 6 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg></button>
         </div>}
       </main>
       <aside className="panel inspector" aria-label={tr('線画')}>
@@ -570,8 +570,8 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             <div className="prop shape"><span><Lbl>{tr('太さ')}</Lbl></span><Seg id="lThick" value={thick} options={[['-1', tr('細')], ['0', tr('元')], ['1', tr('太1')], ['2', tr('太2')]]} onChange={setThick} /></div>
           </div>
           <div className="sec">
-            <div className="prop use">{!full && modes}</div>
-            <div className="prop use" hidden={mode === 'push'}><Seg id="lFill" value={fill} options={[['solid', tr('ベタ')], ['grad', tr('グラデ')], ['tone', tr('トーン')]]} onChange={v => { setFill(v); setMode('paint'); }} /></div>
+            {!full && <div className="prop mrow"><span><Lbl>{tr('ツール')}</Lbl></span>{modes}</div>}
+            <div className="prop mrow" hidden={mode === 'push'}><span><Lbl>{tr('塗り')}</Lbl></span><Seg id="lFill" value={fill} options={[['solid', tr('ベタ')], ['grad', tr('グラデ')], ['tone', tr('トーン')]]} onChange={v => { setFill(v); setMode('paint'); }} /></div>
             {fill === 'tone' && mode !== 'push' && <>
               <div className="prop pair"><span><Lbl>{tr('濃度')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="1" max="90" value={cov} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setCov(Math.max(1, Math.min(90, n))); }} />%</span></div>
               <div className="prop pair"><span><Lbl>{tr('間隔')}</Lbl></span><span className="unit"><DraftInput className="n" type="number" min="3" max="200" value={per} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setPer(Math.max(3, Math.min(200, n))); }} />px</span></div>
@@ -579,7 +579,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
             <div className="prop pair" hidden={mode !== 'push'}><span><Lbl>{tr('ブラシ')}</Lbl></span>
               <span className="unit"><DraftInput className="n" type="number" min="2" max="1000" aria-label={tr('ブラシ')} value={pushB} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setPushB(Math.max(2, Math.min(1000, n))); }} />px</span>
             </div>
-            <div className="prop pair" hidden={(fill !== 'solid' && mode === 'paint') || mode === 'push'}><span><Lbl>{tr('なぞる')}</Lbl></span>
+            <div className="prop pair stroke" hidden={(fill !== 'solid' && mode === 'paint') || mode === 'push'}><span><Lbl>{tr('なぞる')}</Lbl></span>
               <span className="unit">
                 <Seg id="lStroke" value={stroke} options={[['area', tr('領域')], ['brush', tr('ブラシ')]]} onChange={setStroke} />
                 {stroke === 'brush' && <><DraftInput className="n" type="number" min="1" max="500" aria-label={tr('ブラシ')} value={brush} onDraft={v => { const n = Math.round(+v); if (v !== '' && isFinite(n)) setBrush(Math.max(1, Math.min(500, n))); }} />px</>}
