@@ -31,13 +31,13 @@ export function Swap({ labels, at }: { labels: string[]; at: number }) {
 export const altOptions = (labels: [string, Record<string, string | number>?][]) => labels.map(([ja, v], i) => <option key={'alt' + i} hidden disabled>{trAlt(ja, v)}</option>);
 
 // Segmented control: one pressed button per value.
-export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden, disabled }: {
-  id?: string; hidden?: boolean; disabled?: boolean; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; hiddenValues?: T[];
+export function Seg<T extends string>({ id, value, options, onChange, hiddenValues, hidden, disabled, tips }: {
+  id?: string; hidden?: boolean; disabled?: boolean; value: T; options: [T, ReactNode][]; onChange: (v: T) => void; hiddenValues?: T[]; tips?: Partial<Record<T, string>>;
 }) {
   return (
     <div className="seg" id={id} hidden={hidden}>
       {options.map(([v, label]) => (
-        <button key={v} data-v={v} aria-pressed={v === value} disabled={disabled} hidden={hiddenValues?.includes(v)} onClick={() => onChange(v)}><Lbl>{label}</Lbl></button>
+        <button key={v} data-v={v} aria-pressed={v === value} disabled={disabled} hidden={hiddenValues?.includes(v)} title={tips?.[v]} onClick={() => onChange(v)}><Lbl>{label}</Lbl></button>
       ))}
     </div>
   );

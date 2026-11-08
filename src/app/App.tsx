@@ -1,11 +1,18 @@
 // App shell: toolbar, image tool (layers / stage / inspector) and the GIF・動画 tool.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useImageTool } from './image/useImageTool';
 import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { GifTool, isVideo, type GifState, type GifToolApi } from './gif/GifTool';
 import { LINE_RE, LineTool, type LineState, type LineToolApi } from './line/LineTool';
 import { Lbl, Seg, Swap } from './ui';
 import { setLang, tr, useLang } from './i18n';
+const ic = (d: string) => <svg width="16" height="16" viewBox="0 0 16 16"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>;
+// tool switch icons for phones, where the names don't fit next to the document tabs
+const TOOL_ICON = {
+  img: ic('M2 3h12v10H2ZM2 11l3.5-3.5 3 3 2-2L14 12M10.5 6.2h.01'),
+  gif: ic('M2 3h12v10H2ZM6.5 5.8v4.4L10.2 8Z'),
+  line: ic('M10.5 2.5l3 3-7.5 7.5H3v-3ZM9 4l3 3'),
+};
 import { IMG_ACCEPT, LINE_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
 
 type Tool = 'img' | 'gif' | 'line';
@@ -26,6 +33,12 @@ function UpdateLink() {
 
 export function App() {
   const t = useImageTool();
+  // keep the current document's tab in view when the tab row scrolls (phones)
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>('.tab.on'), row = el?.parentElement; if (!el || !row) return;
+    if (el.offsetLeft < row.scrollLeft) row.scrollLeft = el.offsetLeft;
+    else if (el.offsetLeft + el.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = el.offsetLeft + el.offsetWidth - row.clientWidth;
+  }, [t.cur, t.docs.length]);
   const lang = useLang();
   const [tool, setTool] = useState<Tool>('img');
   const [round, setRound] = useState(false);
@@ -39,7 +52,7 @@ export function App() {
     if (tool !== 'img') return;
     const key = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || live.current.t.busy || (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable))) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || live.current.t.busy || (el && ((/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && !['checkbox', 'radio', 'range', 'color'].includes((el as HTMLInputElement).type)) || el.isContentEditable))) return;
       const k = e.key.toLowerCase();
       if (k === 'z' && !e.shiftKey) live.current.t.undo();
       else if ((k === 'z' && e.shiftKey) || k === 'y') live.current.t.redo();
@@ -101,7 +114,7 @@ export function App() {
   return (
     <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : tool === 'line' ? ' tool-line' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
       <header className="bar">
-        <Seg id="tool" value={tool} options={[['img', tr('画像')], ['gif', tr('GIF・動画')], ['line', tr('線画')]]} onChange={v => { if (v === 'img' && tool === 'line') line.current?.send(); setTool(v); }} />
+        <Seg id="tool" value={tool} tips={{ img: tr('画像'), gif: tr('GIF・動画'), line: tr('線画') }} options={([['img', '画像', TOOL_ICON.img], ['gif', 'GIF・動画', TOOL_ICON.gif], ['line', '線画', TOOL_ICON.line]] as const).map(([v, ja, ic]) => [v, <><span className="long"><Lbl>{tr(ja)}</Lbl></span><span className="short" aria-hidden="true">{ic}</span></>] as [typeof v, ReactNode])} onChange={v => { if (v === 'img' && tool === 'line') line.current?.send(); setTool(v); }} />
         <div className="tabs img-only" id="tabs" role="tablist">
           {t.docs.map((d, i) => (
             <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
@@ -114,7 +127,7 @@ export function App() {
         </div>
         <div className="bar-r">
           {window.butcherDesktop && <UpdateLink />}
-          <button className="link" id="lang" onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></button>
+          <button className="link" id="lang" title={lang === 'ja' ? 'English' : '日本語'} onClick={() => setLang(lang === 'ja' ? 'en' : 'ja')}><span className="long"><Lbl other={lang === 'ja' ? '日本語' : 'English'}>{lang === 'ja' ? 'English' : '日本語'}</Lbl></span><span className="short">{lang === 'ja' ? 'EN' : 'JA'}</span></button>
           <button className="btn img-only" id="add" onClick={pickImages}><Swap labels={['開く', '追加']} at={t.docs.length ? 1 : 0} /></button>
           <button className="btn line-only" id="lAdd" disabled={lineSt.busy} onClick={pickLine}><Swap labels={['開く', '追加']} at={0} /></button>
           <button className="btn gif-only" id="gAdd" disabled={gifSt.busy} onClick={pickVideo}><Swap labels={['開く', '追加']} at={gifSt.open ? 1 : 0} /></button>
