@@ -17,6 +17,7 @@ const ICON = {
   trash: <svg width="12" height="13" viewBox="0 0 12 13"><path d="M1 3h10M4.5 3V1.5h3V3M2.5 3l.7 8.5h5.6L9.5 3M5 5.5v4M7 5.5v4" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
   auto: <svg width="13" height="13" viewBox="0 0 13 13"><path d="M1.5 1.5h10v4.25h-10ZM1.5 7.25h10v4.25h-10Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
   open: <svg width="14" height="12" viewBox="0 0 14 12"><path d="M1 10.5V1.5h4l1.2 1.5H12v2M1 10.5l2-5h10.2l-2 5Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>,
+  toImg: <svg width="13" height="13" viewBox="0 0 13 13"><path d="M5.5 1.5h-4v10h10v-4M8 1.5h3.5V5M11.5 1.5 6 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
   save: <svg width="12" height="13" viewBox="0 0 12 13"><path d="M6 1v7.5M3 5.5l3 3 3-3M1 9v3h10V9" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
   folder: <svg width="18" height="14" viewBox="0 0 18 14"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4l1.5 2h7.5A1.5 1.5 0 0 1 17 4.5v7A1.5 1.5 0 0 1 15.5 13h-13A1.5 1.5 0 0 1 1 11.5Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>,
 };
@@ -24,6 +25,15 @@ const collapsed = new WeakSet<Node>();
 const CHK = 'conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0)';
 
 // ---------- left: layers / slices
+// one box for "export all": checked when every layer is, mixed when some are
+function AllBox({ t, onAll }: { t: ImageTool; onAll: () => void }) {
+  const d = t.doc!, ref = useRef<HTMLInputElement>(null);
+  let total = 0; (function a(ch?: Node[]) { for (const n of ch || []) { total++; a(n.children); } })(d.psd.children);
+  const n = d.checked.size, all = total > 0 && n >= total, some = n > 0 && !all;
+  useEffect(() => { if (ref.current) ref.current.indeterminate = some; });
+  return <input ref={ref} type="checkbox" className="ck" id="selAll" checked={all} aria-label={tr('すべて')} title={tr(all ? '解除' : 'すべて')}
+    onChange={() => all ? t.edit(() => d.checked.clear()) : onAll()} />;
+}
 function RenameInput({ t, n, done }: { t: ImageTool; n: Node; done: () => void }) {
   const [v, setV] = useState(nameOf(n)), ended = useRef(false), ref = useRef<HTMLInputElement>(null);
   useEffect(() => { ref.current!.focus(); ref.current!.select(); }, []);
@@ -45,6 +55,7 @@ function LayerTree({ t }: { t: ImageTool }) {
       const bm = n.blendMode, w = PsdCore.collectWarnings(n).filter(x => x !== 'text');
       rows.push(
         <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ '--ind': Math.min(depth, 3) * 12 + 'px' } as CSSProperties}
+          tabIndex={0} aria-current={t.sel === n || undefined} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.currentTarget.click(); } }}
           onClick={() => t.setSel(t.sel === n ? null : n)}>
           <button className="eye" aria-label={tr(n.hidden ? '表示' : '非表示')} aria-pressed={!n.hidden}
             onClick={e => { e.stopPropagation(); t.edit(() => { n.hidden = !n.hidden; }); }}>{n.hidden ? ICON.eyeOff : ICON.eye}</button>
@@ -73,7 +84,7 @@ function SliceList({ t, nameRef }: { t: ImageTool; nameRef: RefObject<HTMLInputE
     <div className="slist sp" id="slist">
       {!d.slices.length && <div className="empty">{tr('画像上をドラッグして作成')}</div>}
       {d.slices.map(s => (
-        <div key={s.id} className={'row' + (s.id === d.sliceSel ? ' sel' : '')} onClick={() => { d.sliceSel = s.id; t.sliceChanged(); }}>
+        <div key={s.id} className={'row' + (s.id === d.sliceSel ? ' sel' : '')} tabIndex={0} aria-current={s.id === d.sliceSel || undefined} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => { d.sliceSel = s.id; t.sliceChanged(); }}>
           <span className="name" onDoubleClick={e => { e.stopPropagation(); d.sliceSel = s.id; t.sliceChanged(); setTimeout(() => { nameRef.current?.focus(); nameRef.current?.select(); }); }}>{s.name}</span>
           <span className="tag num">{`${s.w}×${s.h}`}</span>
           <input type="checkbox" className="ck" checked={s.on} aria-label={tr('書き出し対象')} onClick={e => e.stopPropagation()} onChange={e => { const on = e.target.checked; t.edit(() => { s.on = on; }); }} />
@@ -97,7 +108,7 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
   return (
     <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') { c.current = { x: s.x + s.w / 2, y: s.y + s.h / 2 }; t.begin(); } }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
       <div className="r">
-        <input ref={nameRef} id="sName" type="text" aria-label={tr('スライス名')} value={s.name}
+        <input ref={nameRef} id="sName" type="text" autoComplete="off" spellCheck={false} aria-label={tr('スライス名')} value={s.name}
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
           onBlur={() => { if (!s.name.trim()) { s.name = nextSliceName(d); t.sliceChanged(); } }}
           onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); }} />
@@ -129,7 +140,7 @@ export function LayersPanel({ t, round, setRound, fold, setFold }: { t: ImageToo
     <aside className="panel layers" aria-label={tr('レイヤー')} inert={t.busy}>
       <div className="ph">
         <Seg id="pane" value={t.pane} options={[['layer', tr('レイヤー')], ['slice', tr('スライス')]]} onChange={pickPane} />
-        <span className="lp" hidden={!layer}><button className="link" id="selAll" onClick={selAll}><Lbl>{tr('すべて')}</Lbl></button><button className="link" id="selNone" onClick={() => { if (d) t.edit(() => d.checked.clear()); }}><Lbl other={trAlt('解除')}>{tr('解除')}</Lbl></button></span>
+        <span className="lp" hidden={!layer || !d}>{d && <AllBox t={t} onAll={selAll} />}</span>
         <span className="sp" hidden={layer}><button className="link ic" id="slAuto" aria-label={tr('自動')} title={tr('自動')} onClick={t.autoSlice}>{ICON.auto}</button><button className="link ic" id="slLoad" aria-label={tr('読込')} title={tr('読込')} onClick={() => fileRef.current!.click()}>{ICON.open}</button><button className="link ic" id="slSave" aria-label={tr('保存')} title={tr('保存')} onClick={t.saveSlices}>{ICON.save}</button><button className="link ic" id="slClear" aria-label={tr('全削除')} title={tr('全削除')} disabled={!d?.slices.length} onClick={t.clearSlices}>{ICON.trash}</button>
           <input ref={fileRef} id="slFile" type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) t.loadSlices(f); }} /></span>
         <button className="link fold" id="fold" aria-label={tr(fold ? '開く' : '畳む')} aria-expanded={!fold} onClick={() => setFold(!fold)}>{ICON.chev}</button>
@@ -460,11 +471,11 @@ export function Stage({ t, round, onPick, active }: { t: ImageTool; round: boole
         <div className="drop" id="drop" hidden={!drop}>{tr('ここにドロップ')}</div>
       </div>
       <div className="status" hidden={!d}>
-        <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : `${d.name}  ${d.psd.width}×${d.psd.height}` : ''}</span>
+        <span id="pvName">{d ? t.sel ? [...pathOf(t.sel), nameOf(t.sel)].join(' / ') : d.name : ''}</span>
         <span id="pvSize" className="num" style={{ marginLeft: 'auto' }}>{showOut ? (out ? `${out.w}×${out.h}` : '') : sc ? `${sc.w}×${sc.h}  x${sc.x + sc.w / 2} y${sc.y + sc.h / 2}` : pv ? (bb ? `${bb.w}×${bb.h}  x${bb.x} y${bb.y}` : tr('空')) : ''}</span>
         <span id="pvState">{pv && ws.length > 0 && <span className="warn">{tr('警告 {n}', { n: ws.length })}</span>}</span>
         <Seg id="pvView" hidden={!d} value={showOut ? 'out' : 'src'} options={[['src', tr('元')], ['out', tr('出力')]]} onChange={v => setOutView(v === 'out')} />
-        <button className="link" id="saveOne" hidden={!d} disabled={t.busy} onClick={t.saveOne}><Lbl>{tr('選択中を保存')}</Lbl></button>
+        <button className="link ic" id="saveOne" hidden={!d} disabled={t.busy} aria-label={tr('選択中を保存')} title={tr('選択中を保存')} onClick={t.saveOne}>{ICON.save}</button>
       </div>
     </main>
   );
@@ -495,12 +506,12 @@ export function Inspector({ t }: { t: ImageTool }) {
           ))}
           {g && <div className="prop ps"><span><Lbl>{tr('合わせ方')}</Lbl></span><Seg id="fit" value={o.fits[g]} options={[['contain', tr('余白')], ['cover', tr('切り抜き')]]} onChange={v => set('fits', { ...o.fits, [g]: v })} /></div>}
           {sns && <label className="prop ps" htmlFor="snsQuality" hidden={!variantsOf(o).some(v => v?.svc === 'ig')}><span><Lbl>{tr('画質')}</Lbl></span><span className="unit"><input id="snsQuality" className="n" type="number" min="1" max="100" value={o.quality} onChange={e => set('quality', e.target.value)} /></span></label>}
-          {sw('trim', 'trim', <span><Lbl>{tr('余白カット')}</Lbl></span>, 'prop pair lp', !layer)}
-          {sw('slTrim', 'slTrim', <span><Lbl>{tr('余白カット')}</Lbl></span>, 'prop pair sp', layer)}
+          {sw('trim', 'trim', tr('余白カット'), 'lp', !layer)}
+          {sw('slTrim', 'slTrim', tr('余白カット'), 'sp', layer)}
         </div>
         <div className="sec">
-          <label className="prop pair fill" htmlFor="prefix"><span><Lbl>{tr('接頭辞')}</Lbl></span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
-          <label className="prop pair fill" htmlFor="suffix"><span><Lbl>{tr('接尾辞')}</Lbl></span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="prefix"><span><Lbl>{tr('接頭辞')}</Lbl></span><input id="prefix" className="t" type="text" autoComplete="off" spellCheck={false} value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="suffix"><span><Lbl>{tr('接尾辞')}</Lbl></span><input id="suffix" className="t" type="text" autoComplete="off" spellCheck={false} value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
         </div>
         <div className="sec">
           <SignRows />

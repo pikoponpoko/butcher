@@ -109,7 +109,7 @@ export function SignRows() {
   return <>
     <div className="prop signrow">
       <span><Lbl>{tr('署名')}</Lbl></span>
-      <input className="t" type="text" aria-label={tr('署名')} value={s.text} onChange={e => { const text = e.target.value; setSign(!s.text.trim() && text.trim() ? { text, on: true } : { text }); }} onKeyDown={e => e.stopPropagation()} />
+      <input className="t" type="text" autoComplete="off" spellCheck={false} aria-label={tr('署名')} value={s.text} onChange={e => { const text = e.target.value; setSign(!s.text.trim() && text.trim() ? { text, on: true } : { text }); }} onKeyDown={e => e.stopPropagation()} />
       <label className="sw"><input type="checkbox" aria-label={tr('署名を入れる')} checked={s.on} onChange={e => setSign({ on: e.target.checked })} /></label>
     </div>
     <div className="prop signopt" hidden={!s.on}><span></span><span className="unit">
