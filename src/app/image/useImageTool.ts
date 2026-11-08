@@ -66,14 +66,25 @@ export function useImageTool() {
   function sliceChanged() { if (doc) persistSlices(doc); bump(); }
 
   // undo / redo per document: begin() before an edit, end() after it (drops the entry when nothing changed)
-  const hist = useRef(new WeakMap<Doc, { u: Snap[]; r: Snap[] }>()).current;
-  const stacks = (d: Doc) => { let h = hist.get(d); if (!h) hist.set(d, h = { u: [], r: [] }); return h; };
-  function begin() { if (!doc) return; const h = stacks(doc); h.u.push(snap(doc)); if (h.u.length > 200) h.u.shift(); }
-  function end() { if (!doc) return; const h = stacks(doc), top = h.u[h.u.length - 1]; if (!top) return; if (sameSnap(top, snap(doc))) h.u.pop(); else h.r.length = 0; }
+  // closing a tab is undoable too: the newest of (closed tab, edit of the open document) is undone first
+  const hist = useRef(new WeakMap<Doc, { u: Snap[]; r: Snap[]; n: number[] }>()).current;
+  const stacks = (d: Doc) => { let h = hist.get(d); if (!h) hist.set(d, h = { u: [], r: [], n: [] }); return h; };
+  const seq = useRef(0), closed = useRef<{ d: Doc; i: number; n: number }[]>([]).current, reopened = useRef<{ d: Doc; i: number }[]>([]).current;
+  function begin() { if (!doc) return; const h = stacks(doc); h.u.push(snap(doc)); h.n.push(++seq.current); if (h.u.length > 200) { h.u.shift(); h.n.shift(); } }
+  function end() { if (!doc) return; const h = stacks(doc), top = h.u[h.u.length - 1]; if (!top) return; if (sameSnap(top, snap(doc))) { h.u.pop(); h.n.pop(); } else { h.r.length = 0; reopened.length = 0; } }
   function edit(f: () => void) { begin(); f(); end(); sliceChanged(); }
   function step(back: boolean) {
-    if (!doc) return; const h = stacks(doc), [from, to] = back ? [h.u, h.r] : [h.r, h.u], s = from.pop(); if (!s) return;
+    const c = closed[closed.length - 1], h = doc && stacks(doc);
+    if (back && c && (!h || !h.n.length || c.n > h.n[h.n.length - 1])) { reopen(); return; }
+    if (!back && reopened.length && !h?.r.length) { const r = reopened.pop()!, i = docs.indexOf(r.d); if (i >= 0) closeDoc(i, true); return; }
+    if (!doc || !h) return; const [from, to] = back ? [h.u, h.r] : [h.r, h.u], s = from.pop(); if (!s) return;
+    if (back) h.n.pop(); else h.n.push(++seq.current);
     to.push(snap(doc)); restore(doc, s); sliceChanged();
+  }
+  function reopen() {
+    const c = closed.pop(); if (!c) return;
+    const i = Math.min(c.i, docs.length); docs.splice(i, 0, c.d); reopened.push({ d: c.d, i });
+    setCur(i); setSel(null); setStatus([]); bump();
   }
 
   // a file that is likely too large waits here until このまま開く (force) or the next open
@@ -120,9 +131,10 @@ export function useImageTool() {
     setSel(null); setStatus([]); if (pane !== 'slice') setPane('slice'); bump();
   }
   function selectDoc(i: number) { setCur(i); setSel(null); }
-  function closeDoc(i: number) {
+  function closeDoc(i: number, redo = false) {
     if (job.current) return;
-    docs.splice(i, 1);
+    const [d] = docs.splice(i, 1);
+    if (d) { closed.push({ d, i, n: ++seq.current }); if (closed.length > 5) closed.shift(); if (!redo) reopened.length = 0; }
     if (i <= cur) { const c = Math.max(0, i < cur ? cur - 1 : Math.min(cur, docs.length - 1)); setCur(c); if (i === cur) setSel(null); }
     setStatus([]); bump();
   }
