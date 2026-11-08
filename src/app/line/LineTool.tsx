@@ -552,7 +552,7 @@ export function LineTool({ active, ref, onPick, onState, onOpenImage }: {
         </div> : <div className="status" hidden={!src}>
           <span id="lName">{src ? src.name : ''}</span>
           <span id="lSize" className="num">{sum}</span>
-          <span id="lState" className="muted">{running ? tr('処理中') : ''}</span>
+          <span id="lState" className="muted">{running ? tr('処理中…') : ''}</span>
           <Seg id="lView" hidden={!src} value={view} options={[['src', tr('元')], ['res', tr('結果')]]} onChange={setView} />
           {src && fullBtn}
           <button className="link ic" id="lToImg" hidden={!src} disabled={!ready || busy} aria-label={tr('画像タブで開く')} title={tr('画像タブで開く')} onClick={toImage}><svg width="13" height="13" viewBox="0 0 13 13"><path d="M5.5 1.5h-4v10h10v-4M8 1.5h3.5V5M11.5 1.5 6 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg></button>

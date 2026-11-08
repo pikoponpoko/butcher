@@ -468,3 +468,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
   .insp .sw { min-height: var(--ctl); }
   .tl { height: 52px; } .tl .play { width: 36px; height: 36px; } .track { height: 36px; }
 }
+/* no double-tap zoom delay on controls; native dropdown lists follow the theme (Windows) */
+button, label, select, input, .row { touch-action: manipulation; }
+select option { background-color: var(--field); color: var(--fg); }
+.row:focus-visible { outline-offset: -2px; }

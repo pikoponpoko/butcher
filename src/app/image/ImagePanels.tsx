@@ -55,6 +55,7 @@ function LayerTree({ t }: { t: ImageTool }) {
       const bm = n.blendMode, w = PsdCore.collectWarnings(n).filter(x => x !== 'text');
       rows.push(
         <div key={n._id} className={'row' + (n.hidden ? ' hid' : '') + (t.sel === n ? ' sel' : '')} style={{ '--ind': Math.min(depth, 3) * 12 + 'px' } as CSSProperties}
+          tabIndex={0} aria-current={t.sel === n || undefined} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.currentTarget.click(); } }}
           onClick={() => t.setSel(t.sel === n ? null : n)}>
           <button className="eye" aria-label={tr(n.hidden ? '表示' : '非表示')} aria-pressed={!n.hidden}
             onClick={e => { e.stopPropagation(); t.edit(() => { n.hidden = !n.hidden; }); }}>{n.hidden ? ICON.eyeOff : ICON.eye}</button>
@@ -83,7 +84,7 @@ function SliceList({ t, nameRef }: { t: ImageTool; nameRef: RefObject<HTMLInputE
     <div className="slist sp" id="slist">
       {!d.slices.length && <div className="empty">{tr('画像上をドラッグして作成')}</div>}
       {d.slices.map(s => (
-        <div key={s.id} className={'row' + (s.id === d.sliceSel ? ' sel' : '')} onClick={() => { d.sliceSel = s.id; t.sliceChanged(); }}>
+        <div key={s.id} className={'row' + (s.id === d.sliceSel ? ' sel' : '')} tabIndex={0} aria-current={s.id === d.sliceSel || undefined} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => { d.sliceSel = s.id; t.sliceChanged(); }}>
           <span className="name" onDoubleClick={e => { e.stopPropagation(); d.sliceSel = s.id; t.sliceChanged(); setTimeout(() => { nameRef.current?.focus(); nameRef.current?.select(); }); }}>{s.name}</span>
           <span className="tag num">{`${s.w}×${s.h}`}</span>
           <input type="checkbox" className="ck" checked={s.on} aria-label={tr('書き出し対象')} onClick={e => e.stopPropagation()} onChange={e => { const on = e.target.checked; t.edit(() => { s.on = on; }); }} />
@@ -107,7 +108,7 @@ function SliceProps({ t, s, round, setRound, nameRef }: { t: ImageTool; s: Slice
   return (
     <div className="sprops sp" id="sprops" onFocus={e => { if (e.target.tagName === 'INPUT') { c.current = { x: s.x + s.w / 2, y: s.y + s.h / 2 }; t.begin(); } }} onBlur={e => { if (e.target.tagName === 'INPUT') t.end(); }}>
       <div className="r">
-        <input ref={nameRef} id="sName" type="text" aria-label={tr('スライス名')} value={s.name}
+        <input ref={nameRef} id="sName" type="text" autoComplete="off" spellCheck={false} aria-label={tr('スライス名')} value={s.name}
           onChange={e => { s.name = e.target.value; t.sliceChanged(); }}
           onBlur={() => { if (!s.name.trim()) { s.name = nextSliceName(d); t.sliceChanged(); } }}
           onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); }} />
@@ -509,8 +510,8 @@ export function Inspector({ t }: { t: ImageTool }) {
           {sw('slTrim', 'slTrim', tr('余白カット'), 'sp', layer)}
         </div>
         <div className="sec">
-          <label className="prop pair fill" htmlFor="prefix"><span><Lbl>{tr('接頭辞')}</Lbl></span><input id="prefix" className="t" type="text" value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
-          <label className="prop pair fill" htmlFor="suffix"><span><Lbl>{tr('接尾辞')}</Lbl></span><input id="suffix" className="t" type="text" value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="prefix"><span><Lbl>{tr('接頭辞')}</Lbl></span><input id="prefix" className="t" type="text" autoComplete="off" spellCheck={false} value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
+          <label className="prop pair fill" htmlFor="suffix"><span><Lbl>{tr('接尾辞')}</Lbl></span><input id="suffix" className="t" type="text" autoComplete="off" spellCheck={false} value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
         </div>
         <div className="sec">
           <SignRows />
