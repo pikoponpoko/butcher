@@ -3,7 +3,7 @@ import type { SqlJsStatic } from 'sql.js';
 import * as PsdCore from '../../core/psdcore';
 import type { PsdDoc, PsdNode } from '../../core/psdcore';
 import { readClip } from '../../core/clipreader';
-import { compositeBytes, memBudget } from '../memory';
+import { compositeBytes, imageBytes, memBudget } from '../memory';
 import { loadPsd } from '../lazy';
 
 // Layer nodes carry UI-only fields next to the parsed data.
@@ -36,8 +36,8 @@ export const SRC_RE = /\.(psd|psb|clip|png|jpe?g|webp|gif|bmp)$/i;
 export class TooLarge extends Error {
   constructor(public W: number, public H: number, public need: number) { super('too large'); }
 }
-function checkSize(W: number, H: number, force: boolean) {
-  const need = compositeBytes(W, H, 2);
+function checkSize(W: number, H: number, force: boolean, flat = false) {
+  const need = flat ? imageBytes(W, H) : compositeBytes(W, H, 2);
   if (!force && need > memBudget()) throw new TooLarge(W, H, need);
 }
 export async function openFile(name: string, buf: ArrayBuffer, force = false): Promise<Doc> {
@@ -45,7 +45,7 @@ export async function openFile(name: string, buf: ArrayBuffer, force = false): P
   if (IMG_RE.test(name)) {
     const bmp = await createImageBitmap(new Blob([buf]));
     try {
-      checkSize(bmp.width, bmp.height, force);
+      checkSize(bmp.width, bmp.height, force, true);
       const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
       const ctx = c.getContext('2d')!; ctx.drawImage(bmp, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height);
       c.width = c.height = 0;
