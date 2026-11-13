@@ -16,6 +16,7 @@ const TOOL_ICON = {
 import { IMG_ACCEPT, LINE_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
 
 type Tool = 'img' | 'gif' | 'line';
+const TAB_X = <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 1l6 6M7 1 1 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>;
 
 declare global { interface Window { butcherDesktop?: { version: string; checkUpdate(): Promise<'latest' | 'opened'> } } }
 
@@ -35,10 +36,12 @@ export function App() {
   const t = useImageTool();
   // keep the current document's tab in view when the tab row scrolls (phones)
   useEffect(() => {
-    const el = document.querySelector<HTMLElement>('.tab.on'), row = el?.parentElement; if (!el || !row) return;
-    if (el.offsetLeft < row.scrollLeft) row.scrollLeft = el.offsetLeft;
-    else if (el.offsetLeft + el.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = el.offsetLeft + el.offsetWidth - row.clientWidth;
-  }, [t.cur, t.docs.length]);
+    for (const el of document.querySelectorAll<HTMLElement>('.tab.on')) {
+      const row = el.parentElement!;
+      if (el.offsetLeft < row.scrollLeft) row.scrollLeft = el.offsetLeft;
+      else if (el.offsetLeft + el.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = el.offsetLeft + el.offsetWidth - row.clientWidth;
+    }
+  });
   const lang = useLang();
   const [tool, setTool] = useState<Tool>('img');
   const [round, setRound] = useState(false);
@@ -76,9 +79,9 @@ export function App() {
     return () => { removeEventListener('focusin', on); removeEventListener('focusout', off); };
   }, []);
   const openAny = (files: File[]) => {
-    const vid = files.find(isVideo);
-    if (vid && live.current.gifBusy) return;
-    if (vid) { live.current.setTool('gif'); gif.current?.open(vid); return; }
+    const vids = files.filter(isVideo);
+    if (vids.length && live.current.gifBusy) return;
+    if (vids.length) { live.current.setTool('gif'); gif.current?.open(vids); return; }
     // the 線画 tool takes one plain image
     const ln = live.current.tool === 'line' && files.find(f => LINE_RE.test(f.name));
     if (ln) { line.current?.open(ln); return; }
@@ -99,9 +102,9 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null), lFileRef = useRef<HTMLInputElement>(null);
   const pickLine = () => pickFiles('butcher-line', LINE_ACCEPT, false, lFileRef.current, fs => { if (fs[0]) line.current?.open(fs[0]); });
   const [lineSt, setLineSt] = useState<LineState>({ open: false, busy: false });
-  const pickVideo = () => pickFiles('butcher-video', VIDEO_ACCEPT, false, gFileRef.current, fs => { if (fs[0]) gif.current?.open(fs[0]); });
+  const pickVideo = () => pickFiles('butcher-video', VIDEO_ACCEPT, true, gFileRef.current, fs => gif.current?.open(fs));
   const pickImages = () => pickFiles('butcher-image', IMG_ACCEPT, true, fileRef.current, fs => t.openFiles(fs));
-  const [gifSt, setGifSt] = useState<GifState>({ open: false, ready: false, busy: false });
+  const [gifSt, setGifSt] = useState<GifState>({ open: false, ready: false, busy: false, names: [], cur: 0 });
   live.current.gifBusy = gifSt.busy;
   // ask before leaving (reload, back, closing the tab) while files are open
   const working = t.docs.length > 0 || gifSt.open || lineSt.open;
@@ -120,8 +123,16 @@ export function App() {
             <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
               <button className="tn" role="tab" title={d.name} aria-selected={i === t.cur} onClick={() => t.selectDoc(i)}>{d.name}</button>
               <button className="tx" aria-label={tr('閉じる')} title={tr('閉じる')} disabled={t.busy} onClick={() => t.closeDoc(i)}>
-                <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 1l6 6M7 1 1 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+                {TAB_X}
               </button>
+            </div>
+          ))}
+        </div>
+        <div className="tabs gif-only" id="gTabs" role="tablist">
+          {gifSt.names.map((name, i) => (
+            <div key={i} className={'tab' + (i === gifSt.cur ? ' on' : '')}>
+              <button className="tn" role="tab" title={name} aria-selected={i === gifSt.cur} disabled={gifSt.busy} onClick={() => gif.current?.select(i)}>{name}</button>
+              <button className="tx" aria-label={tr('閉じる')} title={tr('閉じる')} disabled={gifSt.busy} onClick={() => gif.current?.close(i)}>{TAB_X}</button>
             </div>
           ))}
         </div>
@@ -133,10 +144,10 @@ export function App() {
           <button className="btn gif-only" id="gAdd" disabled={gifSt.busy} onClick={pickVideo}><Swap labels={['開く', '追加']} at={gifSt.open ? 1 : 0} /></button>
           {/* while an export runs the same button cancels it */}
           <button className="btn primary img-only" id="export" disabled={!t.busy && (!t.doc || !t.summary.n)} onClick={t.busy ? t.cancel : t.doExport}><Swap labels={['一括書き出し', '中止']} at={t.busy ? 1 : 0} /></button>
-          <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready && !gifSt.busy} onClick={() => gifSt.busy ? gif.current?.cancel() : gif.current?.export()}><Swap labels={['書き出し', '中止']} at={gifSt.busy ? 1 : 0} /></button>
+          <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready && !gifSt.busy} onClick={() => gifSt.busy ? gif.current?.cancel() : gif.current?.export()}><Swap labels={['書き出し', '一括書き出し', '中止']} at={gifSt.busy ? 2 : gifSt.names.length > 1 ? 1 : 0} /></button>
           <button className="btn primary line-only" id="lExport" disabled={!lineSt.open || lineSt.busy} onClick={() => line.current?.export()}><Swap labels={['書き出し', '中止']} at={0} /></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
-          <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) gif.current?.open(f); }} />
+          <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; gif.current?.open(fs); }} />
           <input ref={lFileRef} id="lFile" className="fi" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) line.current?.open(f); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,application/pdf" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
         </div>
