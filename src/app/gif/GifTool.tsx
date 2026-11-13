@@ -54,9 +54,11 @@ function initState() {
   return g;
 }
 type G = ReturnType<typeof initState>;
+// one opened video; the shared settings live in G, these are its own
+type Item = { url: string; name: string; dur: number; sw: number; sh: number; srcFps: number; start: number; end: number; crop: Rect | null; hist: { u: (Rect | null)[]; r: (Rect | null)[] } };
 
-export interface GifToolApi { open(f: File): void; export(): void; cancel(): void }
-export type GifState = { open: boolean; ready: boolean; busy: boolean };
+export interface GifToolApi { open(fs: File[]): void; select(i: number): void; close(i: number): void; export(): void; cancel(): void }
+export type GifState = { open: boolean; ready: boolean; busy: boolean; names: string[]; cur: number };
 export const isVideo = (f: File) => /^video\//.test(f.type) || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
 
 export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref: Ref<GifToolApi>; onPick: () => void; onState: (st: GifState) => void }) {
@@ -74,7 +76,8 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   // the running export: its cancel switch and the signature it started with (the signature is shared with the image tool)
   const job = useRef<{ ac: AbortController; sign: Sign } | null>(null);
   const signNow = () => job.current?.sign ?? getSign();
-  const loading = useRef(0); // open() in progress (a counter, so a newer open wins)
+  const loading = useRef(0); // a video is loading (a counter, so a newer load wins)
+  const items = useRef<Item[]>([]), cur = useRef(0);
 
   const outW = () => s.fmt === 'mp4' ? even(s.w) : s.w, outH = () => s.fmt === 'mp4' ? even(s.h) : s.h;
   const baseFps = () => s.fps || s.srcFps || 30;
@@ -321,14 +324,18 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
   }
 
   // ---------- timeline
+  const thumbTok = useRef(0);
   async function makeThumbs() {
+    const tok = ++thumbTok.current, url = s.url;
     const c = thumbs.current!, tr = track.current!, dpr = devicePixelRatio || 1;
     c.width = Math.max(1, Math.round(tr.clientWidth * dpr)); c.height = Math.max(1, Math.round(tr.clientHeight * dpr));
     const ctx = c.getContext('2d')!, th = c.height, tw = Math.max(1, Math.round(th * s.sw / s.sh)), n = Math.max(1, Math.ceil(c.width / tw));
-    const tv = document.createElement('video'); tv.muted = true; tv.preload = 'auto'; tv.src = s.url;
+    ctx.clearRect(0, 0, c.width, c.height);
+    const tv = document.createElement('video'); tv.muted = true; tv.preload = 'auto'; tv.src = url;
     await new Promise(r => { tv.onloadeddata = r; tv.onerror = r; });
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < n && tok === thumbTok.current; i++) {
       await new Promise<void>(r => { const to = setTimeout(r, 2000); tv.onseeked = () => { clearTimeout(to); r(); }; tv.currentTime = Math.min(s.dur - 0.01, (i + 0.5) * s.dur / n); });
+      if (tok !== thumbTok.current) break;
       try { ctx.drawImage(tv, i * tw, 0, tw, th); } catch {}
     }
     tv.removeAttribute('src'); tv.load();
@@ -426,7 +433,8 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     s.result = blob; s.resUrl = URL.createObjectURL(blob);
     setView('res');
   }
-  const outName = () => s.name.replace(/\.[^.]+$/, '') + '.' + s.fmt;
+  const baseName = () => s.name.replace(/\.[^.]+$/, '');
+  const outName = () => baseName() + '.' + s.fmt;
   async function saveResult() {
     if (!s.result) return;
     const r = await saveFiles([{ name: outName(), data: s.result }]);
@@ -503,46 +511,71 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     }
     return { best: best!, ok: false };
   }
+  // The current video with the current settings: one file, or one per checked size for SNS / 壁紙.
+  async function encodeCurrent(say: (t: string) => void) {
+    const u = use(), sets = u === 'sns' || u === 'wp', sizes = sets ? presetSizes() : [{ id: '', w: outW(), h: outH() }];
+    if (!sizes.length) throw new Error(tr('サイズを選んでください'));
+    // GIF / WebP with a target size keep every frame in memory: check that before starting
+    if (s.fmt !== 'mp4' && s.target) {
+      const need = Math.max(...sizes.map(z => heldBytes(z.w, z.h)));
+      if (need > memBudget()) throw new Error(tr('メモリが足りません（目安 {m}）。範囲・サイズ・FPSを下げるか、目標サイズを外してください', { m: fmtMem(need) }));
+    }
+    const out: { name: string; data: Blob; ok: boolean }[] = [];
+    for (let j = 0; j < sizes.length; j++) {
+      const z = sizes[j], { best, ok } = await encodeAt(z.w, z.h, t => say(sets ? `${j + 1}/${sizes.length} ${t}` : t));
+      out.push({ name: sets ? `${baseName()}_${z.id}.${s.fmt}` : outName(), data: best, ok });
+    }
+    return out;
+  }
+  const overText = (over: number) => tr('{n} 件は目標 {t} MB を超えています', { n: over, t: s.target });
   async function doExport() {
     if (!s.v || s.busy || loading.current) return;
-    // the settings, video and signature are fixed for this export: the inspector, timeline, crop frame and
+    // the settings, videos and signature are fixed for this export: the inspector, timeline, crop frame and
     // opening another video are locked until it ends (finally below), and the signature is copied here
     job.current = { ac: new AbortController(), sign: getSign() };
     s.busy = true; v.pause(); clearResult(); bump();
+    const all = items.current.length > 1, back = cur.current;
     try {
       if (posterize()) await loadGif();
       await signReady(job.current.sign);
-      const u = use(), sizes = u === 'sns' || u === 'wp' ? presetSizes() : [{ w: outW(), h: outH() }];
-      if (!sizes.length) throw new Error(tr('サイズを選んでください'));
-      // GIF / WebP with a target size keep every frame in memory: check that before starting
-      if (s.fmt !== 'mp4' && s.target) {
-        const need = Math.max(...sizes.map(z => heldBytes(z.w, z.h)));
-        if (need > memBudget()) throw new Error(tr('メモリが足りません（目安 {m}）。範囲・サイズ・FPSを下げるか、目標サイズを外してください', { m: fmtMem(need) }));
-      }
-      if (u === 'sns' || u === 'wp') {
-        const sizes = presetSizes();
-        const zip = new (await loadZip())(), base = s.name.replace(/\.[^.]+$/, ''), each: { name: string; data: Blob }[] = []; let over = 0;
-        for (let j = 0; j < sizes.length; j++) {
-          const z = sizes[j], { best, ok } = await encodeAt(z.w, z.h, t => status(`${j + 1}/${sizes.length} ${t}`));
-          if (!ok) over++;
-          zip.file(`${base}_${z.id}.${s.fmt}`, best); each.push({ name: `${base}_${z.id}.${s.fmt}`, data: best });
-        }
-        // phones get the files one by one (share sheet / gallery), elsewhere one zip
-        const r = shareMode() ? await saveFiles(each) : await saveBlob(`${base}_${u}.zip`, await zip.generateAsync({ type: 'blob' }));
-        if (r !== 'ok') status(saveFailText(r));
-        else if (over) setStatusState([{ t: tr('{n} ファイルを書き出し', { n: sizes.length }), c: 'ok' }, { t: ' · ' }, { t: tr('{n} 件は目標 {t} MB を超えています', { n: over, t: s.target }), c: 'warn' }]);
-        else status(tr('{n} ファイルを書き出し', { n: sizes.length }), 'ok');
+      const u = use(), sets = u === 'sns' || u === 'wp';
+      if (!all && !sets) {
+        const [{ data, ok }] = await encodeCurrent(t => status(t));
+        showResult(data);
+        if (!ok) { status(tr('目標 {t} MB に届きません（最小 {s}）', { t: s.target, s: fmtMB(data.size) }), 'warn'); setKeep(true); }
+        else await saveResult();
         return;
       }
-      const { best, ok } = await encodeAt(outW(), outH(), t => status(t));
-      showResult(best);
-      if (!ok) { status(tr('目標 {t} MB に届きません（最小 {s}）', { t: s.target, s: fmtMB(best.size) }), 'warn'); setKeep(true); }
-      else await saveResult();
+      // every opened video, each with its own range and crop frame
+      stash();
+      const files: { name: string; data: Blob }[] = [], used = new Set<string>(); let over = 0;
+      const list = all ? items.current.map((_, i) => i) : [back];
+      for (const i of list) {
+        if (i !== cur.current) await load(i, false);
+        for (const f of await encodeCurrent(t => status(all ? `${i + 1}/${list.length} ${t}` : t))) {
+          // the same file name from different folders gets _2, _3 …
+          let name = f.name; for (let k = 2; used.has(name); k++) name = f.name.replace(/(\.[^.]+)$/, `_${k}$1`);
+          used.add(name); files.push({ name, data: f.data }); if (!f.ok) over++;
+        }
+      }
+      // SNS / 壁紙 sets: one zip, except on phones (share sheet / gallery). Single files are saved one by one.
+      const r = sets && !shareMode() ? await saveBlob(`${all ? 'butcher' : baseName()}_${u}.zip`, await zipOf(files)) : await saveFiles(files);
+      if (r !== 'ok') status(saveFailText(r));
+      else if (over) setStatusState([{ t: tr('{n} ファイルを書き出し', { n: files.length }), c: 'ok' }, { t: ' · ' }, { t: overText(over), c: 'warn' }]);
+      else status(tr('{n} ファイルを書き出し', { n: files.length }), 'ok');
     } catch (e: any) {
       if (job.current?.ac.signal.aborted) status(tr('中止しました'));
       else status(tr(String(e.message || e)), 'err');
     }
-    finally { s.busy = false; s.signLock = undefined; job.current = null; drawPreview(); bump(); }
+    finally {
+      s.busy = false; s.signLock = undefined; job.current = null;
+      if (cur.current !== back && items.current[back]) { await load(back).catch(() => {}); }
+      drawPreview(); bump();
+    }
+  }
+  async function zipOf(files: { name: string; data: Blob }[]) {
+    const zip = new (await loadZip())(); for (const f of files) zip.file(f.name, f.data);
+    return zip.generateAsync({ type: 'blob' });
   }
   const cancel = () => job.current?.ac.abort();
 
@@ -567,29 +600,81 @@ export function GifTool({ active, ref, onPick, onState }: { active: boolean; ref
     const f = 1 / gap, near = COMMON_FPS.reduce((a, c) => Math.abs(c - f) * (Number.isInteger(c) ? 1 : 3) < Math.abs(a - f) * (Number.isInteger(a) ? 1 : 3) ? c : a);
     return Math.abs(near - f) / near < 0.015 ? near : Math.round(f * 100) / 100;
   }
-  async function open(file: File) {
-    if (s.busy) return;
-    const tok = ++loading.current; bump();
-    v.pause(); clearResult();
-    if (s.url) URL.revokeObjectURL(s.url);
-    s.url = URL.createObjectURL(file); s.name = file.name; v.src = s.url; pal.current = null;
-    try {
-      await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error(tr('この動画は読み込めません'))); });
-      if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
-      s.srcFps = await measureFps();
-      if (tok !== loading.current) return; // a newer file was opened meanwhile
-      s.v = true; s.dur = v.duration; s.sw = v.videoWidth; s.sh = v.videoHeight; s.start = 0; s.end = Math.min(s.dur, 6); s.crop = null; hist.current = { u: [], r: [] };
-      if (s.tpl === 'custom' && locked()) { const r = ratio(); s.w = Math.min(s.w, Math.round(Math.min(s.sw, s.sh * r))); lockFromW(); }
-      status('');
-      bump();
-      await seek(0); drawPreview(); bump();
-      makeThumbs();
-    } catch (e: any) { if (tok === loading.current) status(String(e.message || e), 'err'); }
-    finally { if (tok === loading.current) { loading.current = 0; bump(); } }
+  // keep the current video's own range, crop frame and its undo history
+  function stash() {
+    const it = items.current[cur.current]; if (!s.v || !it) return;
+    it.start = s.start; it.end = s.end; it.crop = s.crop; it.hist = hist.current;
   }
-  useImperativeHandle(ref, () => ({ open, export: doExport, cancel }));
+  // Show video i. The first time it is read: duration, size, frame rate, default range.
+  async function load(i: number, thumbsToo = true) {
+    const it = items.current[i], tok = ++loading.current; bump();
+    v.pause(); clearResult(); pal.current = null;
+    try {
+      v.src = it.url;
+      await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error(tr('この動画は読み込めません'))); });
+      if (!it.dur) {
+        if (!isFinite(v.duration)) { v.currentTime = 1e9; await new Promise(r => v.addEventListener('seeked', r, { once: true })); }
+        it.srcFps = await measureFps(); it.dur = v.duration; it.sw = v.videoWidth; it.sh = v.videoHeight; it.start = 0; it.end = Math.min(it.dur, 6);
+      }
+      if (tok !== loading.current) return; // another video was chosen meanwhile
+      cur.current = i;
+      Object.assign(s, { v: true, url: it.url, name: it.name, dur: it.dur, sw: it.sw, sh: it.sh, srcFps: it.srcFps, start: it.start, end: it.end, crop: it.crop });
+      hist.current = it.hist;
+      if (s.ratio === 'src') lockFromW(); // 元: each video keeps its own aspect
+      bump();
+      await seek(s.start); drawPreview(); bump();
+      if (thumbsToo) makeThumbs();
+    } finally { if (tok === loading.current) { loading.current = 0; bump(); } }
+  }
+  // Show video i; one that can't be read is closed and the one shown before (back) comes back.
+  async function showItem(i: number, back: number | null) {
+    try { await load(i); status(''); return true; }
+    catch (e: any) {
+      const name = items.current[i]?.name; drop(i);
+      if (back !== null && items.current.length) { if (back > i) back--; await load(Math.min(back, items.current.length - 1)).catch(() => {}); }
+      status(`${name}: ${String(e.message || e)}`, 'err'); return false;
+    }
+  }
+  async function open(fs: File[]) {
+    if (s.busy || !fs.length) return;
+    const first = !items.current.length, back = s.v ? cur.current : null;
+    stash();
+    const at = items.current.length;
+    for (const f of fs) items.current.push({ url: URL.createObjectURL(f), name: f.name, dur: 0, sw: 0, sh: 0, srcFps: 0, start: 0, end: 0, crop: null, hist: { u: [], r: [] } });
+    // the first new video that opens is shown
+    while (items.current.length > at && !await showItem(at, back !== null && items.current.length > at + 1 ? null : back));
+    if (first && s.v && s.tpl === 'custom' && locked()) { const r = ratio(); s.w = Math.min(s.w, Math.round(Math.min(s.sw, s.sh * r))); lockFromW(); drawPreview(); bump(); }
+  }
+  async function select(i: number) {
+    if (s.busy || loading.current || i === cur.current && s.v) return;
+    stash(); await showItem(i, cur.current);
+  }
+  // remove item i without showing another one
+  function drop(i: number) {
+    const [it] = items.current.splice(i, 1); if (it) URL.revokeObjectURL(it.url);
+    if (i < cur.current) cur.current--;
+    if (!items.current.length) {
+      cur.current = 0; loading.current = 0; ++thumbTok.current; // a load still running sees a newer token and stops
+      v.pause(); v.removeAttribute('src'); v.load(); clearResult();
+      Object.assign(s, { v: false, url: '', name: '', dur: 0, sw: 0, sh: 0, crop: null });
+      const c = thumbs.current; if (c) c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
+      bump();
+    }
+  }
+  function close(i: number) {
+    if (s.busy || !items.current[i]) return;
+    const was = i === cur.current;
+    if (!was) stash();
+    drop(i);
+    if (was && items.current.length) showItem(Math.min(i, items.current.length - 1), null);
+    else bump();
+  }
+  useImperativeHandle(ref, () => ({ open, select, close, export: doExport, cancel }));
   const ready = s.v && !s.busy && !loading.current, stSeen = useRef('');
-  useEffect(() => { const k = `${s.v}${ready}${s.busy}`; if (k !== stSeen.current) { stSeen.current = k; onState({ open: s.v, ready, busy: s.busy }); } });
+  useEffect(() => {
+    const names = items.current.map(x => x.name), k = JSON.stringify([s.v, ready, s.busy, names, cur.current]);
+    if (k !== stSeen.current) { stSeen.current = k; onState({ open: s.v, ready, busy: s.busy, names, cur: cur.current }); }
+  });
 
   // ---------- render
   const W = outW(), H = outH(), k = Math.min(avail.w / W, avail.h / H, 4);
