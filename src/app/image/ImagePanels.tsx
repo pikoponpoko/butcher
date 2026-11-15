@@ -6,7 +6,7 @@ import { filesPerTarget, previewOutput, renderSlice, toCanvas, variantsOf } from
 import { isolateDrawing } from './isolate';
 import { IMAGE_PRESETS, SERVICES, toggleId } from '../presets';
 import type { ImageTool } from './useImageTool';
-import { AddHint, DraftInput, Lbl, altOptions, Seg, SignRows, StatusText, ThemeRow, Toggles } from '../ui';
+import { AddHint, DraftInput, Lbl, NameRows, altOptions, Seg, SignRows, StatusText, ThemeRow, Toggles } from '../ui';
 import { tr, trAlt } from '../i18n';
 import { contrastColor, drawSign, signActive, signLayout, signReady, useSign } from '../sign';
 
@@ -510,8 +510,7 @@ export function Inspector({ t }: { t: ImageTool }) {
           {sw('slTrim', 'slTrim', tr('余白カット'), 'sp', layer)}
         </div>
         <div className="sec">
-          <label className="prop pair fill" htmlFor="prefix"><span><Lbl>{tr('接頭辞')}</Lbl></span><input id="prefix" className="t" type="text" autoComplete="off" spellCheck={false} value={o.prefix} onChange={e => set('prefix', e.target.value)} /></label>
-          <label className="prop pair fill" htmlFor="suffix"><span><Lbl>{tr('接尾辞')}</Lbl></span><input id="suffix" className="t" type="text" autoComplete="off" spellCheck={false} value={o.suffix} onChange={e => set('suffix', e.target.value)} /></label>
+          <NameRows p="" o={o} set={set as never} />
         </div>
         <div className="sec">
           <SignRows />

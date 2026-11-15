@@ -89,4 +89,8 @@ const EN: Record<string, string> = {
   'フレーム取得 {i}/{n}': 'Reading frames {i}/{n}', '{f}作成 {n}回目': '{f} encoding, try {n}', 'WebP作成 {i}/{n}': 'WebP encoding {i}/{n}', 'MP4作成 {i}/{n}': 'MP4 encoding {i}/{n}',
   'このブラウザはWebP書き出しに対応していません': 'This browser can’t export WebP', 'このブラウザはMP4書き出しに対応していません': 'This browser can’t export MP4',
   'この解像度のMP4はこのブラウザで書き出せません': 'This browser can’t export MP4 at this size', 'この動画は読み込めません': 'Can’t open this video',
+  // convert
+  '変換': 'Convert', 'ファイル': 'Files', '長辺': 'Long', '倍率': 'Scale', '拡大しない': 'No upscaling', '回転': 'Rotate', '右に90°': '90° clockwise', '左に90°': '90° counterclockwise',
+  '反転': 'Flip', '左右': 'Horizontal', '上下': 'Vertical', '元の名前': 'Original', '連番': 'Numbered', '文字列': 'Text', '開始番号': 'Start at', '桁数': 'Digits',
+  '名前順に並べ替え': 'Sort by name', '読み込めません': 'Can’t open', 'このブラウザは{f}書き出しに対応していません': 'This browser can’t export {f}',
 };

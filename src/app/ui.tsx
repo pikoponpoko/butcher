@@ -4,6 +4,7 @@ import type { Status } from './image/exporter';
 import { setSign, useSign } from './sign';
 import { otherOf, tr, trAlt } from './i18n';
 import { setTheme, useTheme } from './theme';
+import type { NameRule } from './conv/convert';
 
 // Empty preview: the whole stage opens the file picker; files can also be dropped anywhere.
 export function AddHint({ id, hidden, formats }: { id?: string; hidden?: boolean; formats: string }) {
@@ -122,4 +123,19 @@ export function SignRows() {
 export function ThemeRow() {
   const t = useTheme();
   return <div className="prop"><span><Lbl>{tr('テーマ')}</Lbl></span><Seg value={t} options={[['auto', tr('自動')], ['light', tr('ライト')], ['dark', tr('ダーク')]]} onChange={setTheme} /></div>;
+}
+
+// File naming: the original name with prefix / suffix, or text + a zero-padded number. `p` keeps ids unique per tool.
+export function NameRows({ p, o, set }: { p: string; o: NameRule; set: <K extends keyof NameRule>(k: K, v: NameRule[K]) => void }) {
+  const text = (id: string, k: 'prefix' | 'suffix' | 'seqText', ja: string) => (
+    <label className={'prop pair fill' + (k === 'seqText' ? ' wide' : '')} htmlFor={p + id}><span><Lbl>{tr(ja)}</Lbl></span><input id={p + id} className="t" type="text" autoComplete="off" spellCheck={false} value={o[k]} onChange={e => set(k, e.target.value)} onKeyDown={e => e.stopPropagation()} /></label>
+  );
+  const num = (id: string, k: 'seqStart' | 'seqDigits', ja: string, min: number, max: number) => (
+    <label className="prop pair" htmlFor={p + id}><span><Lbl>{tr(ja)}</Lbl></span><span className="unit"><input id={p + id} className="n" type="number" min={min} max={max} value={o[k]} onChange={e => set(k, e.target.value)} /></span></label>
+  );
+  return <>
+    <div className="prop"><span><Lbl>{tr('名前')}</Lbl></span><Seg id={p + 'naming'} value={o.naming} options={[['orig', tr('元の名前')], ['seq', tr('連番')]]} onChange={v => set('naming', v)} /></div>
+    {o.naming === 'orig' ? <>{text('prefix', 'prefix', '接頭辞')}{text('suffix', 'suffix', '接尾辞')}</>
+      : <>{text('seqText', 'seqText', '文字列')}{num('seqStart', 'seqStart', '開始番号', 0, 999999999)}{num('seqDigits', 'seqDigits', '桁数', 1, 10)}</>}
+  </>;
 }

@@ -6,9 +6,10 @@ import { type Sign, drawSign, getSign, signReady } from '../sign';
 import { type Fit, type Group, type Preset, IMAGE_PRESETS, picked } from '../presets';
 import { isolateDrawing } from './isolate';
 import { loadZip } from '../lazy';
+import { type NameRule, ruleName } from '../conv/convert';
 import { type Doc, type Mode, type Node, type Slice, type Rendered, WARN_JA, dedupe, makeNamer, nameOf, renderNode, safe, stem, targetsOf } from './model';
 
-export interface Settings {
+export interface Settings extends NameRule {
   mode: Mode; fmt: 'png' | 'jpeg' | 'webp' | 'ico'; quality: string; size: 'orig' | 'w' | 'h' | Group; picks: string[]; fits: Record<Group, Fit>; px: string; basis: 'canvas' | 'image'; trim: boolean; slTrim: boolean; slIso: boolean;
   prefix: string; suffix: string; hidden: boolean; tree: boolean; slFill: boolean; allFiles: boolean; incWarn: boolean; out: 'zip' | 'each' | 'dir';
 }
@@ -144,7 +145,7 @@ export async function icoFile(pngs: Blob[], sizes: number[]) {
   });
   return new Blob([head.buffer, ...pngs], { type: 'image/x-icon' });
 }
-async function writeTo(dir: FileSystemDirectoryHandle, path: string, blob: Blob) {
+export async function writeTo(dir: FileSystemDirectoryHandle, path: string, blob: Blob) {
   const parts = path.split('/'), file = parts.pop()!;
   for (const p of parts) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(file, { create: true })).createWritable(); await w.write(blob); await w.close();
@@ -171,7 +172,7 @@ export async function saveCurrent(o: Settings, d: Doc, n: Node | null, s: Slice 
   const r = renderNode(d, n, o.hidden), vs = variantsOf(o);
   if (!vs.length) return [{ t: tr('サイズを選んでください'), c: 'err' }];
   await signReady();
-  const name = o.prefix + safe(s ? s.name : n ? nameOf(n) : stem(d.name)) + o.suffix, files: Encoded = [];
+  const name = ruleName(o, safe(s ? s.name : n ? nameOf(n) : stem(d.name)), 0), files: Encoded = [];
   for (const v of vs) { const f = await encode(o, r.rgba, r.W, r.H, s, v); if (!f) return [{ t: tr('空の画像です'), c: 'err' }]; files.push(...f); }
   // a Favicon set goes out as one zip; SNS sizes are saved one by one
   if (o.fmt === 'ico') {
@@ -194,7 +195,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
     try { dir = await showDirectoryPicker({ id: 'butcher-out', mode: 'readwrite' }); }
     catch (e: any) { if (e.name === 'AbortError') return [{ t: tr('保存を取り消しました') }]; noDir(); return [{ t: tr('この環境ではフォルダに保存できません'), c: 'err' }]; }
   }
-  let written = 0, skipped = 0;
+  let written = 0, skipped = 0, seq = 0;
   const share = o.out === 'each' && shareMode(), shared: { name: string; data: Blob }[] = [];
   await signReady(sign);
   // one naming rule for ZIP, folder and 個別: the same path ("/" flattened to "_" when files are saved one by one)
@@ -213,7 +214,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
         const ws = dedupe(r.warnings.filter(w => w.type !== 'text'));
         const stemName = safe(t.label);
         const rel = o.mode === 'both' ? (t.kind === 'folder' ? 'folders/' : 'layers/') : '';
-        const name0 = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : '')) + o.prefix + stemName + o.suffix;
+        const name0 = base + rel + (o.tree ? t.path.map(safe).map(p => p + '/').join('') : (t.path.length ? t.path.map(safe).join('_') + '_' : '')) + ruleName(o, stemName, seq);
         if (ws.length) report.push(`${name0}\n` + ws.map(w => `  - ${w.path}: ${tr(WARN_JA[w.type] || w.type)}${w.detail ? ` (${w.detail})` : ''}`).join('\n'));
         if (ws.length && !o.incWarn) { skipped++; continue; }
         const files: Encoded = [];
@@ -222,6 +223,7 @@ export async function exportAll(o: Settings, docs: Doc[], progress: (s: Status) 
           if (!f) { report.push(`${name0}${tagOf(v)}.${extOf(o, v)}\n  - ${tr('空の画像のため省略')}`); break; }
           files.push(...f);
         }
+        if (files.length) seq++;
         const name1 = files.length ? names.take(name0, files.map(f => f.tail)) : name0;
         for (const f of files) {
           const path = name1 + f.tail;
