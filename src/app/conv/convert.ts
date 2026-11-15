@@ -1,5 +1,6 @@
 // 変換 tool: batch format / size / rotation / flip conversion of plain images. Everything runs on the device.
 import { type Sign, drawSign } from '../sign';
+import { decode } from './decode';
 
 export type ConvFmt = 'orig' | 'jpeg' | 'png' | 'webp';
 export type ConvSize = 'orig' | 'long' | 'w' | 'h' | 'pct';
@@ -14,7 +15,7 @@ export const CONV_INIT: ConvSettings = {
   naming: 'orig', prefix: '', suffix: '', seqText: 'image_', seqStart: '1', seqDigits: '3',
 };
 
-export const CONV_RE = /\.(png|jpe?g|webp|gif|bmp|avif)$/i;
+export { CONV_RE } from './decode';
 const int = (s: string, lo: number, hi: number, d: number) => { const n = Math.round(+s); return s.trim() !== '' && isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
 
 // File stem for the i-th output (0-based): the original name with prefix / suffix, or text + zero-padded number.
@@ -50,7 +51,7 @@ export class NoEncoder extends Error { constructor(public fmt: string) { super('
 
 // Decode (EXIF orientation applied), resize, rotate, flip, stamp the signature and encode one file.
 export async function convertFile(o: ConvSettings, file: Blob, name: string, sign: Sign): Promise<{ blob: Blob; w: number; h: number; W: number; H: number }> {
-  const src = await createImageBitmap(file, { imageOrientation: 'from-image' } as ImageBitmapOptions);
+  const src = await decode(file, name);
   const W = src.width, H = src.height, { w, h } = outSize(o, W, H), sw = o.rot === '90' || o.rot === '270';
   const dw = sw ? h : w, dh = sw ? w : h;
   // the browser's high-quality resampler; drawImage below only moves pixels

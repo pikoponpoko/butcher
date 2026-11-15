@@ -7,6 +7,8 @@ import { makeNamer, safe } from '../image/model';
 import { saveBlob, saveFailText, saveFiles, shareMode } from '../save';
 import { getSign, signReady, useSign } from '../sign';
 import { loadZip } from '../lazy';
+import { isPdf, pdfToImages } from '../pdf';
+import { CONV_FORMATS, SHOWN_RE, decode } from './decode';
 import { tr, trAlt } from '../i18n';
 import { AddHint, Lbl, NameRows, altOptions, Seg, SignRows, StatusText, ThemeRow, Toggles } from '../ui';
 
@@ -50,11 +52,19 @@ export function ConvTool({ ref, onPick, onState }: { ref: Ref<ConvToolApi>; onPi
   const it = items[cur] as Item | undefined;
   useEffect(() => { onState({ open: items.length > 0, busy, n: items.length }); }, [items.length, busy]);
 
-  function open(fs: File[]) {
-    const add = fs.filter(f => CONV_RE.test(f.name)).map(file => ({ id: ++seq, file, name: file.name }));
-    if (!add.length) return;
-    setItems(p => { if (!p.length) setCur(0); return [...p, ...add]; });
+  function add(fs: File[]) {
+    if (!fs.length) return;
+    setItems(p => { if (!p.length) setCur(0); return [...p, ...fs.map(file => ({ id: ++seq, file, name: file.name }))]; });
+  }
+  // a PDF becomes one image per page
+  async function open(fs: File[]) {
+    fs = fs.filter(f => CONV_RE.test(f.name)); if (!fs.length) return;
     setStatus([]);
+    for (const f of fs) {
+      if (!isPdf(f)) { add([f]); continue; }
+      setStatus([{ t: f.name + ' …' }]);
+      try { add(await pdfToImages(f)); setStatus([]); } catch { setStatus([{ t: tr('{f}: 読み込めません（{e}）', { f: f.name, e: 'PDF' }), c: 'err' }]); }
+    }
   }
   // thumbnails and source sizes, one file at a time
   const thumbing = useRef(false);
@@ -65,7 +75,7 @@ export function ConvTool({ ref, onPick, onState }: { ref: Ref<ConvToolApi>; onPi
     (async () => {
       const p: Partial<Item> = {};
       try {
-        const b = await createImageBitmap(next.file, { imageOrientation: 'from-image' } as ImageBitmapOptions);
+        const b = await decode(next.file, next.name);
         const k = Math.min(1, 78 / Math.max(b.width, b.height)), c = document.createElement('canvas');
         c.width = Math.max(1, Math.round(b.width * k)); c.height = Math.max(1, Math.round(b.height * k));
         const ctx = c.getContext('2d')!; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(b, 0, 0, c.width, c.height);
@@ -93,7 +103,22 @@ export function ConvTool({ ref, onPick, onState }: { ref: Ref<ConvToolApi>; onPi
   const [pv, setPv] = useState<{ url: string; w: number; h: number; size: number } | null>(null);
   const [srcUrl, setSrcUrl] = useState('');
   const [err, setErr] = useState('');
-  useEffect(() => { if (!it) { setSrcUrl(''); return; } const u = URL.createObjectURL(it.file); setSrcUrl(u); return () => URL.revokeObjectURL(u); }, [it?.id]);
+  // formats the browser can't show directly are decoded once into a PNG for the 元 view
+  useEffect(() => {
+    setSrcUrl(''); if (!it || it.bad) return;
+    let u = '', stop = false;
+    (async () => {
+      let b: Blob = it.file;
+      if (!SHOWN_RE.test(it.name)) {
+        if (view !== 'src') return;
+        const bmp = await decode(it.file, it.name).catch(() => null); if (!bmp || stop) { bmp?.close(); return; }
+        const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height; c.getContext('2d')!.drawImage(bmp, 0, 0); bmp.close();
+        const png = await new Promise<Blob | null>(r => c.toBlob(r, 'image/png')); c.width = c.height = 0; if (!png || stop) return; b = png;
+      }
+      u = URL.createObjectURL(b); setSrcUrl(u);
+    })();
+    return () => { stop = true; if (u) URL.revokeObjectURL(u); };
+  }, [it?.id, it?.bad, view === 'src' || SHOWN_RE.test(it?.name || '')]);
   const pvKey = JSON.stringify([it?.id, o.fmt, o.quality, o.size, o.px, o.pct, o.noUp, o.rot, o.flipH, o.flipV, sign]);
   useEffect(() => {
     if (!it || it.bad) { setPv(null); return; }
@@ -141,7 +166,7 @@ export function ConvTool({ ref, onPick, onState }: { ref: Ref<ConvToolApi>; onPi
           style={dims ? { '--sw': dims.w, '--sh': dims.h } as CSSProperties : est ? { '--sw': est.w, '--sh': est.h } as CSSProperties : undefined}>
           {it && (showOut ? pv && <img className="out" alt="" src={pv.url} style={box} /> : srcUrl && <img className="out" alt="" src={srcUrl} style={box} />)}
           {it && (it.bad || (showOut && err)) && <div className="warnbox">{it.bad ? tr('読み込めません') : err}</div>}
-          <AddHint hidden={!!items.length} formats="JPEG · PNG · WebP · GIF · BMP · AVIF" />
+          <AddHint hidden={!!items.length} formats={CONV_FORMATS} />
         </div>
         <div className="status" hidden={!it}>
           <span id="cName">{it ? showOut ? outNames[cur] : it.name : ''}</span>

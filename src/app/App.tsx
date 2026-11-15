@@ -6,6 +6,7 @@ import { GifTool, isVideo, type GifState, type GifToolApi } from './gif/GifTool'
 import { LINE_RE, LineTool, type LineState, type LineToolApi } from './line/LineTool';
 import { ConvTool, type ConvState, type ConvToolApi } from './conv/ConvTool';
 import { CONV_RE } from './conv/convert';
+import { CONV_EXTS } from './conv/decode';
 import { Lbl, Seg, Swap } from './ui';
 import { setLang, tr, useLang } from './i18n';
 const ic = (d: string) => <svg width="16" height="16" viewBox="0 0 16 16"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>;
@@ -157,7 +158,7 @@ export function App() {
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; gif.current?.open(fs); }} />
           <input ref={lFileRef} id="lFile" className="fi" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) line.current?.open(f); }} />
-          <input ref={cFileRef} id="cFile" className="fi" type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.avif" multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; conv.current?.open(fs); }} />
+          <input ref={cFileRef} id="cFile" className="fi" type="file" accept={'image/*,application/pdf,' + CONV_EXTS.join(',')} multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; conv.current?.open(fs); }} />
           <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,application/pdf" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
         </div>
       </header>
