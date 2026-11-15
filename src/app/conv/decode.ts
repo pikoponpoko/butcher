@@ -6,10 +6,10 @@ const NATIVE = /\.(png|jpe?g|jfif|webp|gif|bmp|avif|ico|cur)$/i;
 // formats an <img> shows as-is
 export const SHOWN_RE = /\.(png|jpe?g|jfif|webp|gif|bmp|avif|ico|cur|svg)$/i;
 export const RAW_RE = /\.(cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|x3f|3fr|erf|kdc|mrw|iiq|rwl|mos|mef)$/i;
-export const CONV_RE = /\.(png|jpe?g|jfif|webp|gif|bmp|avif|ico|cur|svg|tga|pbm|pgm|ppm|pnm|qoi|psd|psb|clip|pdf|cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|x3f|3fr|erf|kdc|mrw|iiq|rwl|mos|mef)$/i;
-export const CONV_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.webp', '.gif', '.bmp', '.avif', '.ico', '.cur', '.svg', '.tga', '.pbm', '.pgm', '.ppm', '.pnm', '.qoi', '.psd', '.psb', '.clip', '.pdf',
+export const CONV_RE = /\.(png|jpe?g|jfif|webp|gif|bmp|avif|ico|cur|svg|tga|pbm|pgm|ppm|pnm|qoi|tif|tiff|heic|heif|hif|jxl|psd|psb|clip|pdf|cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|x3f|3fr|erf|kdc|mrw|iiq|rwl|mos|mef)$/i;
+export const CONV_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.webp', '.gif', '.bmp', '.avif', '.ico', '.cur', '.svg', '.tga', '.pbm', '.pgm', '.ppm', '.pnm', '.qoi', '.tif', '.tiff', '.heic', '.heif', '.hif', '.jxl', '.psd', '.psb', '.clip', '.pdf',
   '.cr2', '.cr3', '.crw', '.nef', '.nrw', '.arw', '.srf', '.sr2', '.dng', '.orf', '.rw2', '.raf', '.pef', '.srw', '.x3f', '.3fr', '.erf', '.kdc', '.mrw', '.iiq', '.rwl', '.mos', '.mef'];
-export const CONV_FORMATS = 'JPEG · PNG · WebP · GIF · BMP · AVIF · ICO · SVG · TGA · PNM · QOI · PSD · CLIP · PDF · RAW';
+export const CONV_FORMATS = 'JPEG · PNG · WebP · GIF · BMP · AVIF · ICO · SVG · TIFF · HEIC · JPEG XL · TGA · PNM · QOI · PSD · CLIP · PDF · RAW';
 
 const ORIENT = { imageOrientation: 'from-image' } as ImageBitmapOptions;
 const fromPixels = (data: Uint8ClampedArray, w: number, h: number) => createImageBitmap(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, w, h));
@@ -24,6 +24,9 @@ export async function decode(file: Blob, name: string): Promise<ImageBitmap> {
   if (ext === 'tga') { const r = tga(u8); return fromPixels(r.data, r.w, r.h); }
   if (/^p[bgpn]m$/.test(ext)) { const r = pnm(u8); return fromPixels(r.data, r.w, r.h); }
   if (ext === 'qoi') { const r = qoi(u8); return fromPixels(r.data, r.w, r.h); }
+  if (ext === 'tif' || ext === 'tiff') return tiff(buf);
+  if (ext === 'heic' || ext === 'heif' || ext === 'hif') return heic(u8);
+  if (ext === 'jxl') { const { default: dec } = await import('@jsquash/jxl/decode.js'); return createImageBitmap(await dec(buf)); }
   if (ext === 'psd' || ext === 'psb' || ext === 'clip') return layered(name, buf);
   // unknown extension: let the browser try
   return createImageBitmap(file, ORIENT);
@@ -194,10 +197,40 @@ async function raw(b: Uint8Array) {
   // the RAW's own orientation (TIFF-based RAWs, and the TIFF block inside CR3)
   let o = 0;
   for (let s = 0; s < Math.min(b.length, 1 << 20) && !o; s++) if ((b[s] === 0x49 && b[s + 1] === 0x49 && b[s + 2] === 42 && b[s + 3] === 0) || (b[s] === 0x4d && b[s + 1] === 0x4d && b[s + 2] === 0 && b[s + 3] === 42)) o = tiffOrientation(b, s) || -1;
-  const bmp = await createImageBitmap(jpg, { imageOrientation: 'none' } as ImageBitmapOptions);
-  if (o !== 3 && o !== 6 && o !== 8) return bmp;
-  const sw = o !== 3, c = document.createElement('canvas'); c.width = sw ? bmp.height : bmp.width; c.height = sw ? bmp.width : bmp.height;
-  const ctx = c.getContext('2d')!; ctx.translate(c.width / 2, c.height / 2); ctx.rotate(o === 3 ? Math.PI : o === 6 ? Math.PI / 2 : -Math.PI / 2);
-  ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2); bmp.close();
+  return orient(await createImageBitmap(jpg, { imageOrientation: 'none' } as ImageBitmapOptions), o);
+}
+
+// EXIF orientation 2–8 applied to a bitmap decoded as stored.
+async function orient(bmp: ImageBitmap, o: number) {
+  if (o < 2 || o > 8) return bmp;
+  const sw = o >= 5, W = bmp.width, H = bmp.height, c = document.createElement('canvas'); c.width = sw ? H : W; c.height = sw ? W : H;
+  const ctx = c.getContext('2d')!;
+  // [a, b, c, d, e, f] maps stored pixels to upright ones
+  const m: Record<number, number[]> = { 2: [-1, 0, 0, 1, W, 0], 3: [-1, 0, 0, -1, W, H], 4: [1, 0, 0, -1, 0, H], 5: [0, 1, 1, 0, 0, 0], 6: [0, 1, -1, 0, H, 0], 7: [0, -1, -1, 0, H, W], 8: [0, -1, 1, 0, 0, W] };
+  ctx.setTransform(...(m[o] as [number, number, number, number, number, number])); ctx.drawImage(bmp, 0, 0); bmp.close();
   const out = await createImageBitmap(c); c.width = c.height = 0; return out;
+}
+
+// TIFF: the largest page (others are usually thumbnails), with its orientation tag
+async function tiff(buf: ArrayBuffer) {
+  const UTIF = (await import('utif')).default;
+  const ifds = UTIF.decode(buf); if (!ifds.length) throw new Error('TIFF');
+  const size = (d: any) => (d.t256?.[0] || 0) * (d.t257?.[0] || 0);
+  const d = ifds.reduce((a: any, b: any) => size(b) > size(a) ? b : a);
+  UTIF.decodeImage(buf, d, ifds);
+  const rgba = UTIF.toRGBA8(d), w = d.width, h = d.height;
+  return orient(await fromPixels(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), d.t274?.[0] || 1);
+}
+
+// HEIC / HEIF (iPhone photos): libheif, loaded only when one is opened. Rotation stored in the file is applied by libheif.
+async function heic(u8: Uint8Array) {
+  const lib = (await import('libheif-js/libheif-wasm/libheif-bundle.mjs')).default();
+  if (lib.ready) await lib.ready;
+  const dec = new lib.HeifDecoder(), imgs = dec.decode(u8);
+  if (!imgs?.length) throw new Error('HEIC');
+  const img = imgs[0], w = img.get_width(), h = img.get_height();
+  try {
+    const data = await new Promise<ImageData>((res, rej) => img.display({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }, (d: ImageData | null) => d ? res(d) : rej(new Error('HEIC'))));
+    return await createImageBitmap(new ImageData(data.data as Uint8ClampedArray<ArrayBuffer>, w, h));
+  } finally { for (const i of imgs) i.free?.(); }
 }
