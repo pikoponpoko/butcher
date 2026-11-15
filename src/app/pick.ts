@@ -1,6 +1,7 @@
 // File pickers that start in the folder used last time (Chrome / Edge on PC: File System Access API,
 // the browser remembers the folder per id). Elsewhere — Android, Safari, Firefox, the artifact iframe —
 // the hidden <input type=file> is used.
+import { CONV_EXTS } from './conv/decode';
 type Accept = Record<string, string[]>;
 type OpenPicker = (o: { id?: string; multiple?: boolean; types?: { accept: Accept }[]; excludeAcceptAllOption?: boolean }) => Promise<FileSystemFileHandle[]>;
 
@@ -16,6 +17,7 @@ export async function pickFiles(id: string, accept: Accept, multiple: boolean, i
 
 export const IMG_ACCEPT: Accept = { 'image/*': ['.psd', '.psb', '.clip', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'], 'application/pdf': ['.pdf'] };
 export const LINE_ACCEPT: Accept = { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'] };
+export const CONV_ACCEPT: Accept = { 'image/*': CONV_EXTS.filter(e => e !== '.pdf'), 'application/pdf': ['.pdf'] };
 export const VIDEO_ACCEPT: Accept = { 'video/*': ['.mp4', '.webm', '.mov', '.m4v'] };
 
 // Files shared to the installed app (Android: ギャラリー → 共有 → Butcher). The service worker keeps them in a cache.
