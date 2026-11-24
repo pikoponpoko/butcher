@@ -5,6 +5,7 @@ import { Inspector, LayersPanel, Stage } from './image/ImagePanels';
 import { GifTool, isVideo, type GifState, type GifToolApi } from './gif/GifTool';
 import { LINE_RE, LineTool, type LineState, type LineToolApi } from './line/LineTool';
 import { ConvTool, type ConvState, type ConvToolApi } from './conv/ConvTool';
+import { SHEET_NAME_RE, SHEET_RE, SheetTool, type SheetState, type SheetToolApi } from './sheet/SheetTool';
 import { CONV_RE } from './conv/convert';
 import { CONV_EXTS } from './conv/decode';
 import { Lbl, Seg, Swap } from './ui';
@@ -16,10 +17,11 @@ const TOOL_ICON = {
   gif: ic('M2 3h12v10H2ZM6.5 5.8v4.4L10.2 8Z'),
   line: ic('M10.5 2.5l3 3-7.5 7.5H3v-3ZM9 4l3 3'),
   conv: ic('M2.5 5.5h10l-3-3M13.5 10.5h-10l3 3'),
+  sheet: ic('M1.5 4h13v8h-13ZM4.75 4v8M8 4v8M11.25 4v8'),
 };
-import { CONV_ACCEPT, IMG_ACCEPT, LINE_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
+import { CONV_ACCEPT, IMG_ACCEPT, LINE_ACCEPT, SHEET_ACCEPT, VIDEO_ACCEPT, pickFiles, takeShared } from './pick';
 
-type Tool = 'img' | 'gif' | 'line' | 'conv';
+type Tool = 'img' | 'gif' | 'line' | 'conv' | 'sheet';
 const TAB_X = <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 1l6 6M7 1 1 7" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>;
 
 declare global { interface Window { butcherDesktop?: { version: string; checkUpdate(): Promise<'latest' | 'opened'> } } }
@@ -50,7 +52,7 @@ export function App() {
   const [tool, setTool] = useState<Tool>('img');
   const [round, setRound] = useState(false);
   const [fold, setFold] = useState(false);
-  const gif = useRef<GifToolApi>(null), line = useRef<LineToolApi>(null), conv = useRef<ConvToolApi>(null);
+  const gif = useRef<GifToolApi>(null), line = useRef<LineToolApi>(null), conv = useRef<ConvToolApi>(null), sheet = useRef<SheetToolApi>(null);
   const live = useRef({ t, tool, setTool, gifBusy: false }); live.current = { t, tool, setTool, gifBusy: false };
 
   const appRef = useRef<HTMLDivElement>(null);
@@ -86,6 +88,9 @@ export function App() {
     const vids = files.filter(isVideo);
     if (vids.length && live.current.gifBusy) return;
     if (vids.length) { live.current.setTool('gif'); gif.current?.open(vids); return; }
+    // .clip goes to 四面図 while it is open; Meshy四面図_*.clip from any tool
+    const sh = files.filter(f => SHEET_RE.test(f.name) && (live.current.tool === 'sheet' || SHEET_NAME_RE.test(f.name)));
+    if (sh.length) { live.current.setTool('sheet'); sheet.current?.open(sh); return; }
     // the 線画 tool takes one plain image
     const ln = live.current.tool === 'line' && files.find(f => LINE_RE.test(f.name));
     if (ln) { line.current?.open(ln); return; }
@@ -104,17 +109,26 @@ export function App() {
     return () => { removeEventListener('dragenter', enter); removeEventListener('dragover', over); removeEventListener('drop', drop); };
   }, []);
 
-  const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null), lFileRef = useRef<HTMLInputElement>(null), cFileRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null), gFileRef = useRef<HTMLInputElement>(null), lFileRef = useRef<HTMLInputElement>(null), cFileRef = useRef<HTMLInputElement>(null), sFileRef = useRef<HTMLInputElement>(null);
+  const [sheetSt, setSheetSt] = useState<SheetState>({ open: false, busy: false, loading: false, n: 0 });
+  const pickSheet = () => pickFiles('butcher-sheet', SHEET_ACCEPT, true, sFileRef.current, fs => sheet.current?.open(fs));
   const [convSt, setConvSt] = useState<ConvState>({ open: false, busy: false, n: 0 });
   const pickConv = () => pickFiles('butcher-conv', CONV_ACCEPT, true, cFileRef.current, fs => conv.current?.open(fs));
   const pickLine = () => pickFiles('butcher-line', LINE_ACCEPT, false, lFileRef.current, fs => { if (fs[0]) line.current?.open(fs[0]); });
   const [lineSt, setLineSt] = useState<LineState>({ open: false, busy: false });
   const pickVideo = () => pickFiles('butcher-video', VIDEO_ACCEPT, true, gFileRef.current, fs => gif.current?.open(fs));
-  const pickImages = () => pickFiles('butcher-image', IMG_ACCEPT, true, fileRef.current, fs => t.openFiles(fs));
+  // a Meshy sheet picked here opens in 四面図 (as a layered document it would need gigabytes)
+  const openImages = (fs: File[]) => {
+    const sh = fs.filter(f => SHEET_NAME_RE.test(f.name)), rest = fs.filter(f => !sh.includes(f));
+    if (sh.length) sheet.current?.open(sh);
+    if (!rest.length) { if (sh.length) setTool('sheet'); return; }
+    return t.openFiles(rest);
+  };
+  const pickImages = () => pickFiles('butcher-image', IMG_ACCEPT, true, fileRef.current, openImages);
   const [gifSt, setGifSt] = useState<GifState>({ open: false, ready: false, busy: false, names: [], cur: 0 });
   live.current.gifBusy = gifSt.busy;
   // ask before leaving (reload, back, closing the tab) while files are open
-  const working = t.docs.length > 0 || gifSt.open || lineSt.open || convSt.open;
+  const working = t.docs.length > 0 || gifSt.open || lineSt.open || convSt.open || sheetSt.open;
   useEffect(() => {
     if (!working) return;
     const ask = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
@@ -122,9 +136,9 @@ export function App() {
   }, [working]);
 
   return (
-    <div ref={appRef} className={'app' + (tool === 'gif' ? ' tool-gif' : tool === 'line' ? ' tool-line' : tool === 'conv' ? ' tool-conv' : '') + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
+    <div ref={appRef} className={'app' + (tool === 'img' ? '' : ' tool-' + tool) + (fold ? ' folded' : '') + (typing ? ' typing' : '')}>
       <header className="bar">
-        <Seg id="tool" value={tool} tips={{ img: tr('画像'), gif: tr('GIF・動画'), line: tr('線画'), conv: tr('変換') }} options={([['img', '画像', TOOL_ICON.img], ['gif', 'GIF・動画', TOOL_ICON.gif], ['line', '線画', TOOL_ICON.line], ['conv', '変換', TOOL_ICON.conv]] as const).map(([v, ja, ic]) => [v, <><span className="long"><Lbl>{tr(ja)}</Lbl></span><span className="short" aria-hidden="true">{ic}</span></>] as [typeof v, ReactNode])} onChange={v => { if (v === 'img' && tool === 'line') line.current?.send(); setTool(v); }} />
+        <Seg id="tool" value={tool} tips={{ img: tr('画像'), gif: tr('GIF・動画'), line: tr('線画'), conv: tr('変換'), sheet: tr('四面図') }} options={([['img', '画像', TOOL_ICON.img], ['gif', 'GIF・動画', TOOL_ICON.gif], ['line', '線画', TOOL_ICON.line], ['conv', '変換', TOOL_ICON.conv], ['sheet', '四面図', TOOL_ICON.sheet]] as const).map(([v, ja, ic]) => [v, <><span className="long"><Lbl>{tr(ja)}</Lbl></span><span className="short" aria-hidden="true">{ic}</span></>] as [typeof v, ReactNode])} onChange={v => { if (v === 'img' && tool === 'line') line.current?.send(); setTool(v); }} />
         <div className="tabs img-only" id="tabs" role="tablist">
           {t.docs.map((d, i) => (
             <div key={i} className={'tab' + (i === t.cur ? ' on' : '')}>
@@ -150,16 +164,19 @@ export function App() {
           <button className="btn line-only" id="lAdd" disabled={lineSt.busy} onClick={pickLine}><Swap labels={['開く', '追加']} at={0} /></button>
           <button className="btn conv-only" id="cAdd" disabled={convSt.busy} onClick={pickConv}><Swap labels={['開く', '追加']} at={convSt.open ? 1 : 0} /></button>
           <button className="btn gif-only" id="gAdd" disabled={gifSt.busy} onClick={pickVideo}><Swap labels={['開く', '追加']} at={gifSt.open ? 1 : 0} /></button>
+          <button className="btn sheet-only" id="sAdd" disabled={sheetSt.busy} onClick={pickSheet}><Swap labels={['開く', '追加']} at={sheetSt.open ? 1 : 0} /></button>
           {/* while an export runs the same button cancels it */}
           <button className="btn primary img-only" id="export" disabled={!t.busy && (!t.doc || !t.summary.n)} onClick={t.busy ? t.cancel : t.doExport}><Swap labels={['一括書き出し', '中止']} at={t.busy ? 1 : 0} /></button>
           <button className="btn primary gif-only" id="gExport" disabled={!gifSt.ready && !gifSt.busy} onClick={() => gifSt.busy ? gif.current?.cancel() : gif.current?.export()}><Swap labels={['書き出し', '一括書き出し', '中止']} at={gifSt.busy ? 2 : gifSt.names.length > 1 ? 1 : 0} /></button>
           <button className="btn primary conv-only" id="cExport" disabled={!convSt.n && !convSt.busy} onClick={() => convSt.busy ? conv.current?.cancel() : conv.current?.export()}><Swap labels={['書き出し', '一括書き出し', '中止']} at={convSt.busy ? 2 : convSt.n > 1 ? 1 : 0} /></button>
+          <button className="btn primary sheet-only" id="sExport" disabled={!sheetSt.busy && (!sheetSt.n || sheetSt.loading)} onClick={() => sheetSt.busy ? sheet.current?.cancel() : sheet.current?.export()}><Swap labels={['書き出し', '一括書き出し', '中止']} at={sheetSt.busy ? 2 : sheetSt.n > 1 ? 1 : 0} /></button>
           <button className="btn primary line-only" id="lExport" disabled={!lineSt.open || lineSt.busy} onClick={() => line.current?.export()}><Swap labels={['書き出し', '中止']} at={0} /></button>
           {/* application/mp4 is not video/*, so Android Chrome shows a camera + files chooser instead of the photo picker. */}
           <input ref={gFileRef} id="gFile" className="fi" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,application/mp4" multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; gif.current?.open(fs); }} />
           <input ref={lFileRef} id="lFile" className="fi" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif" tabIndex={-1} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) line.current?.open(f); }} />
           <input ref={cFileRef} id="cFile" className="fi" type="file" accept={'image/*,application/pdf,' + CONV_EXTS.join(',')} multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; conv.current?.open(fs); }} />
-          <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,application/pdf" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await t.openFiles(fs); }} />
+          <input ref={sFileRef} id="sFile" className="fi" type="file" accept=".clip" multiple tabIndex={-1} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; sheet.current?.open(fs); }} />
+          <input ref={fileRef} id="file" className="fi" type="file" accept=".psd,.psb,.clip,.png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,application/pdf" multiple tabIndex={-1} onChange={async e => { const fs = [...(e.target.files || [])]; e.target.value = ''; await openImages(fs); }} />
         </div>
       </header>
       <LayersPanel t={t} round={round} setRound={setRound} fold={fold} setFold={setFold} />
@@ -167,6 +184,7 @@ export function App() {
       <Inspector t={t} />
       <GifTool active={tool === 'gif'} ref={gif} onPick={pickVideo} onState={setGifSt} />
       <ConvTool ref={conv} onPick={pickConv} onState={setConvSt} />
+      <SheetTool ref={sheet} onPick={pickSheet} onState={setSheetSt} />
       <LineTool active={tool === 'line'} ref={line} onPick={pickLine} onState={setLineSt} onOpenImage={(name, psd) => { t.addDoc(name, psd); setTool('img'); }} />
     </div>
   );

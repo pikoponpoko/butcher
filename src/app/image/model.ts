@@ -21,10 +21,11 @@ export const WARN_JA: Record<string, string> = {
   maskFeather: 'マスクのぼかしは適用されません', artboard: 'アートボードの背景・切り抜きは適用されません',
   clipBlendUnverified: '合成モードは未検証（通常として処理）', clipMaskUnverified: 'CLIP STUDIOのマスクは未検証', clipOffset: 'レイヤーの位置情報は未検証',
   clipLayerType: 'この種類のレイヤーは未検証', clipLayout: 'タイル配置を読み取れません', clipPixelFormat: 'この色形式は未対応',
+  clipBlendApprox: '発光の合成モードは近似',
 };
 
 let sqlReady: Promise<SqlJsStatic> | null = null;
-function ensureSQL() {
+export function ensureSQL() {
   if (!sqlReady) sqlReady = Promise.all([import('sql.js'), import('sql.js/dist/sql-wasm.wasm?url')])
     .then(([m, w]) => m.default({ locateFile: () => w.default }))
     .catch(() => { sqlReady = null; throw new Error('読み込み用ライブラリを取得できません'); });
@@ -41,7 +42,8 @@ function checkSize(W: number, H: number, force: boolean, flat = false) {
   if (!force && need > memBudget()) throw new TooLarge(W, H, need);
 }
 export async function openFile(name: string, buf: ArrayBuffer, force = false): Promise<Doc> {
-  if (/\.clip$/i.test(name)) { const psd = await readClip(buf, await ensureSQL()); checkSize(psd.width, psd.height, force); return makeDoc(name, psd); }
+  // the size is checked before any layer is decoded: each one is canvas-sized
+  if (/\.clip$/i.test(name)) return makeDoc(name, await readClip(buf, await ensureSQL(), (W, H) => checkSize(W, H, force)));
   if (IMG_RE.test(name)) {
     const bmp = await createImageBitmap(new Blob([buf]));
     try {

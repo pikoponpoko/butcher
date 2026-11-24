@@ -93,4 +93,7 @@ const EN: Record<string, string> = {
   '変換': 'Convert', 'ファイル': 'Files', '長辺': 'Long', '倍率': 'Scale', '拡大しない': 'No upscaling', '回転': 'Rotate', '右に90°': '90° clockwise', '左に90°': '90° counterclockwise',
   '反転': 'Flip', '左右': 'Horizontal', '上下': 'Vertical', '元の名前': 'Original', '連番': 'Numbered', '文字列': 'Text', '開始番号': 'Start at', '桁数': 'Digits',
   '名前順に並べ替え': 'Sort by name', '読み込めません': 'Can’t open', 'このブラウザは{f}書き出しに対応していません': 'This browser can’t export {f}',
+  // 四面図
+  '四面図': 'Turnaround', '左右入れ替え': 'Swap L/R', '絵がありません': 'No drawing', '四面図ではありません（{s}）': 'Not a turnaround sheet ({s})',
+  '待機中': 'Waiting', '{n} 枚': '{n} images', '発光の合成モードは近似': 'Glow blend modes are approximate',
 };
