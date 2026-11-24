@@ -510,12 +510,12 @@ select option { background-color: var(--field); color: var(--fg); }
 /* 四面図: the four output squares (white, as written) with the view name under each */
 .sheet .tiles { display: grid; gap: 8px; }
 .sheet .tile { margin: 0; display: grid; gap: 4px; }
-.sheet .tile > div { position: relative; overflow: hidden; background: #fff; }
+.sheet .tile > div { position: relative; overflow: hidden; background-color: var(--chk-a); background-image: conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: 12px 12px; }
 .sheet .tile > div.empty { background: none; box-sizing: border-box; border: 1px dashed var(--line); }
 .sheet .stage .tile img { position: absolute; display: block; max-width: none; background: none; }
 .sheet .tile figcaption { height: 16px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet .smsg { color: var(--muted); }
 .sheet .smsg.warn { color: var(--warn); }
-.thumb.paper { background-color: #fff; background-size: contain; background-repeat: no-repeat; background-position: center; }
+.thumb.pic { background-image: var(--pic), conic-gradient(var(--chk-b) 25%, transparent 0 50%, var(--chk-b) 0 75%, transparent 0); background-size: contain, 6px 6px; background-repeat: no-repeat, repeat; background-position: center, 0 0; }
 /* tablets / phones: the two settings share one full-width row */
 @media (max-width: 1100px) { .sheet .insp > .lock > .sec { grid-column: 1 / -1; border-right: 0; } }

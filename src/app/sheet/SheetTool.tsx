@@ -1,7 +1,7 @@
 // 四面図 tool: Meshy 4-view sheets (Meshy四面図_<name>.clip) → <name>_Main / _Right / _Back / _Left.png.
 // Each file is rendered once when it is added; its four crops are kept as PNG and cut to the shared square on export,
 // so the margin and the side names can change without rendering again.
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { NotSheet, type Rect, charName, squareOf, viewNames } from '../../core/clipsheet';
 import { type Status, writeTo } from '../image/exporter';
 import { WARN_JA, makeNamer, safe } from '../image/model';
@@ -182,7 +182,7 @@ export function SheetTool({ ref, onPick, onState }: { ref: Ref<SheetToolApi>; on
           {items.map((x, i) => (
             <div key={x.id} role="option" aria-selected={i === cur} tabIndex={0} className={'row' + (i === cur ? ' sel' : '')} onClick={() => setCur(i)}
               onKeyDown={e => { if (e.key === 'ArrowDown' && i < items.length - 1) { setCur(i + 1); (e.currentTarget.nextSibling as HTMLElement)?.focus(); e.preventDefault(); } else if (e.key === 'ArrowUp' && i > 0) { setCur(i - 1); (e.currentTarget.previousSibling as HTMLElement)?.focus(); e.preventDefault(); } else if (e.key === 'Delete' && !busy) remove(i); }}>
-              <span className={'thumb' + (x.thumb ? ' paper' : '')} style={x.thumb ? { backgroundImage: `url(${x.thumb})` } : undefined} />
+              <span className={'thumb' + (x.thumb ? ' pic' : '')} style={x.thumb ? { '--pic': `url(${x.thumb})` } as CSSProperties : undefined} />
               <span className="nm"><span className="name" title={x.name}>{charName(x.name)}</span>
                 <span className={'sub' + (x.st === 'empty' || x.st === 'notSheet' || x.st === 'bad' ? ' warn' : '')} title={sub(x)}>{sub(x)}{x.warn?.length ? <> · <span className="warn" title={warnText(x)}>{tr('警告 {n}', { n: x.warn.length })}</span></> : null}</span>
               </span>

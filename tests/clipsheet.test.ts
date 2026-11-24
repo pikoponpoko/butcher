@@ -83,11 +83,12 @@ const P = (i: number) => SHEET.x0 + i * SHEET.size; // canvas x of panel i
 const solid = (c: number[]): Px => () => c;
 const BLACK = [0, 0, 0, 255];
 
-test('renders each panel from the layers over it, leaving out guides, background and the colour sheet', async () => {
+test('renders each panel from the layers over it, leaving out guides, background, paper and the colour sheet', async () => {
   const buf = clipFile(SHEET.W, 4096, [
-    { name: '背景', fill: [255, 255, 255] },
-    // a paper layer: no tiles, empty tiles filled white
-    { name: '用紙', x: P(0) + 900, y: SHEET.y0 + 700, W: 512, H: 512, init: 1, px: () => null },
+    { name: '用紙', fill: [255, 255, 255] },
+    { name: '背景', x: 0, y: 0, W: 600, H: 600, px: solid([255, 255, 255, 255]) },
+    // no tiles, empty tiles filled white
+    { name: '白地', x: P(0) + 900, y: SHEET.y0 + 700, W: 512, H: 512, init: 1, px: () => null },
     { name: 'ガイド', folder: [{ name: '枠', x: 0, y: 0, W: 600, H: 600, px: solid(BLACK) }] },
     { name: '色', x: P(0) + 1000, y: SHEET.y0 + 800, W: 200, H: 300, px: solid([200, 100, 50, 255]) },
     { name: '線画', folder: [
@@ -99,12 +100,27 @@ test('renders each panel from the layers over it, leaving out guides, background
     { name: '総合彩色見本', x: P(3), y: SHEET.y0, W: 1000, H: 1000, px: solid(BLACK) },
   ]);
   const sheet = readSheet(buf, SQL);
-  expect(sheet.layers.map(l => l.name)).toEqual(['用紙', '色', '線画']);
+  expect(sheet.layers.map(l => l.name)).toEqual(['白地', '色', '線画']);
   const r = await renderSheet(buf, SQL);
-  expect(r.views.map(v => v.box)).toEqual([{ x: 1000, y: 800, w: 200, h: 300 }, null, { x: 1500, y: 1000, w: 64, h: 64 }, { x: 1700, y: 2000, w: 50, h: 100 }]);
-  expect([...r.views[0].rgba!.subarray(0, 4)]).toEqual([200, 100, 50, 255]);
-  expect([...r.views[3].rgba!.subarray(0, 4)]).toEqual([0, 0, 0, 255]);
+  expect(r.views.map(v => v.box)).toEqual([{ x: 900, y: 700, w: 512, h: 512 }, null, { x: 1500, y: 1000, w: 64, h: 64 }, { x: 1700, y: 2000, w: 50, h: 100 }]);
+  const at = (v: number, x: number, y: number) => { const b = r.views[v].box!; return [...r.views[v].rgba!.subarray((y * b.w + x) * 4, (y * b.w + x) * 4 + 4)]; };
+  expect(at(0, 0, 0)).toEqual([255, 255, 255, 255]);
+  expect(at(0, 100, 100)).toEqual([200, 100, 50, 255]);
+  expect(at(3, 0, 0)).toEqual([0, 0, 0, 255]);
   expect(r.warnings).toEqual([{ layer: '側面', type: 'clipMaskUnverified' }]);
+});
+
+test('keeps the transparency: semi-transparent pixels as they are, faint specks left out', async () => {
+  const r = await renderSheet(clipFile(SHEET.W, 4096, [
+    { name: 'かすれ', x: P(1) + 100, y: SHEET.y0 + 100, W: 8, H: 8, px: solid([0, 0, 0, 5]) },
+    { name: '影', x: P(1) + 1000, y: SHEET.y0 + 1000, W: 64, H: 64, px: (x, y) => x < 32 ? [10, 20, 30, 128] : y < 32 ? [0, 0, 0, 0] : [200, 0, 0, 6] },
+  ]), SQL);
+  const v = r.views[1];
+  expect(v.box).toEqual({ x: 1000, y: 1000, w: 64, h: 64 });
+  const at = (x: number, y: number) => [...v.rgba!.subarray((y * 64 + x) * 4, (y * 64 + x) * 4 + 4)];
+  expect(at(0, 0)).toEqual([10, 20, 30, 128]);
+  expect(at(40, 0)).toEqual([0, 0, 0, 0]);
+  expect(at(40, 40)).toEqual([200, 0, 0, 6]);
 });
 
 test('a sheet with nothing drawn has no views', async () => {
@@ -127,14 +143,14 @@ test('one square for all four views, centred on the panel axis', () => {
   expect(squareOf([null, null, null, null], 0)).toBeNull();
 });
 
-test('the output is the square on white with the drawing in place', () => {
+test('the output is the square, transparent around the drawing', () => {
   const v = { box: { x: 10, y: 20, w: 2, h: 1 }, rgba: new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 255]) };
   const out = viewPixels(v, { x: 9, y: 19, size: 4 });
   const at = (x: number, y: number) => [...out.subarray((y * 4 + x) * 4, (y * 4 + x) * 4 + 4)];
   expect(at(1, 1)).toEqual([255, 0, 0, 255]);
   expect(at(2, 1)).toEqual([0, 0, 255, 255]);
-  expect(at(0, 0)).toEqual([255, 255, 255, 255]);
-  expect(at(3, 3)).toEqual([255, 255, 255, 255]);
+  expect(at(0, 0)).toEqual([0, 0, 0, 0]);
+  expect(at(3, 3)).toEqual([0, 0, 0, 0]);
 });
 
 test('names', () => {
