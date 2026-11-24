@@ -85,12 +85,14 @@ async function offscreenRGBA(db: Database, ext: Map<string, Uint8Array>, mipmapI
 // Only "normal" (0) is verified against CLIP STUDIO output so far.
 const BLEND: Record<number, string> = { 0: 'normal' };
 
-export async function readClip(buf: ArrayBuffer, SQL: SqlJsStatic): Promise<ClipDoc> {
+// `check` sees the canvas size before any pixels are decoded (and can throw to stop).
+export async function readClip(buf: ArrayBuffer, SQL: SqlJsStatic, check?: (W: number, H: number) => void): Promise<ClipDoc> {
   const { ext, db: dbBytes } = chunks(buf);
   const db = new SQL.Database(dbBytes);
   try {
     const cv = rows(db, 'select CanvasWidth,CanvasHeight,CanvasRootFolder from Canvas')[0];
     const W = Math.round(cv.CanvasWidth), H = Math.round(cv.CanvasHeight);
+    check?.(W, H);
     const layers = new Map(rows(db, 'select * from Layer').map(l => [l.MainId, l]));
     async function build(id: number): Promise<PsdNode> {
       const L = layers.get(id)!, warn: string[] = [];

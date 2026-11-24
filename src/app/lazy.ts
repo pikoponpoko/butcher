@@ -8,3 +8,4 @@ function once<T>(load: () => Promise<T>) {
 }
 export const loadZip = once(() => import('jszip').then(m => m.default));
 export const loadPsd = once(() => import('ag-psd'));
+export const loadSheetWorker = once(() => import('../core/clipsheet.worker?worker&inline').then(m => m.default));

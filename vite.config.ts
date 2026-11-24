@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// Writes the list of built files into dist/sw.js: ASSETS are cached at install, LAZY (PDF, CLIP STUDIO, HEIC, JPEG XL and TIFF readers) on first use.
+// Writes the list of built files into dist/sw.js: ASSETS are cached at install, LAZY (PDF, CLIP STUDIO, HEIC, JPEG XL and TIFF readers, the 四面図 worker) on first use.
 function swAssets(): Plugin {
   let files: string[] = [], outDir = 'dist';
   return {
@@ -12,7 +12,7 @@ function swAssets(): Plugin {
     generateBundle(_, bundle) { files = Object.keys(bundle).filter(f => f.startsWith('assets/')).sort(); },
     closeBundle() {
       const p = resolve(outDir, 'sw.js'), src = readFileSync(p, 'utf8');
-      const lazy = (f: string) => /^assets\/(pdfjs\/|pdf[.-]|sql-wasm|libheif|jxl_dec|UTIF)/.test(f);
+      const lazy = (f: string) => /^assets\/(pdfjs\/|pdf[.-]|sql-wasm|libheif|jxl_dec|UTIF|clipsheet)/.test(f);
       const out = src.replace('const ASSETS = [];', `const ASSETS = ${JSON.stringify(files.filter(f => !lazy(f)))};`)
         .replace('const LAZY = [];', `const LAZY = ${JSON.stringify(files.filter(lazy))};`);
       if (out === src) throw new Error('sw.js: ASSETS placeholder not found');

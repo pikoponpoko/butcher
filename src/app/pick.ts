@@ -19,6 +19,8 @@ export const IMG_ACCEPT: Accept = { 'image/*': ['.psd', '.psb', '.clip', '.png',
 export const LINE_ACCEPT: Accept = { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'] };
 export const CONV_ACCEPT: Accept = { 'image/*': CONV_EXTS.filter(e => e !== '.pdf'), 'application/pdf': ['.pdf'] };
 export const VIDEO_ACCEPT: Accept = { 'video/*': ['.mp4', '.webm', '.mov', '.m4v'] };
+// .clip has no registered type; an unknown one keeps the dialog from listing every image as well
+export const SHEET_ACCEPT: Accept = { 'application/x-clip-studio': ['.clip'] };
 
 // Files shared to the installed app (Android: ギャラリー → 共有 → Butcher). The service worker keeps them in a cache.
 export const SHARE_CACHE = 'butcher-share';
