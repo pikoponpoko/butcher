@@ -1,7 +1,7 @@
 // Meshy 4-view sheets (Meshy四面図_<name>.clip): four square panels side by side on a 14688 px wide canvas.
 // Every layer of such a sheet is canvas-sized, so the full-canvas RGBA that clipreader builds would need gigabytes.
 // Here the tiles are only indexed when the file is read; each panel then decodes just the tiles over it,
-// composites the visible drawing layers (guides, background and the colour sheet left out) and flattens on white.
+// composites the visible drawing layers (guides, background and the colour sheet left out) on transparency.
 import type { Database, SqlJsStatic, SqlValue } from 'sql.js';
 import { chunks } from './clipreader';
 import { compositeDocument, type PsdDoc, type PsdNode, type PixelImage } from './psdcore';
@@ -11,10 +11,11 @@ export interface Rect { x: number; y: number; w: number; h: number }
 export const SHEET = { W: 14688, x0: 539, y0: 539, size: 3482, n: 4 } as const;
 // left to right on the sheet: 正面, 側面（右）, 背面, 側面（左）
 export const VIEW_NAMES = ['Main', 'Right', 'Back', 'Left'] as const;
-// top-level items that are not part of the drawing
+// top-level items that are not part of the drawing (paper layers, 用紙, are left out too)
 export const SKIP_TOP = ['ガイド', '背景', '総合彩色見本'];
-// a pixel darker than this in any channel (after flattening on white) counts as drawing
-const INK = 250;
+// alpha from which a pixel counts as drawing (the faintest black that showed on white). Fainter specks, as soft erasers
+// leave them, don't widen the square; outside the drawing's box they are dropped.
+const SEEN = 6;
 const TILE = 256;
 
 export class NotSheet extends Error { constructor(public W: number, public H: number) { super('not a sheet'); } }
@@ -79,7 +80,7 @@ const BLEND: Record<number, string> = {
 
 export interface Sheet { W: number; H: number; layers: SheetLayer[] }
 
-// Layer tree and tile index of a .clip (no pixels decoded). Top-level guides / background / colour sheet are left out.
+// Layer tree and tile index of a .clip (no pixels decoded). Top-level guides / background / colour sheet and paper are left out.
 export function readSheet(buf: ArrayBuffer, SQL: SqlJsStatic): Sheet {
   const { ext, db: dbBytes } = chunks(buf);
   const db = new SQL.Database(dbBytes);
@@ -103,7 +104,7 @@ export function readSheet(buf: ArrayBuffer, SQL: SqlJsStatic): Sheet {
     const build = (id: number, top: boolean): SheetLayer | null => {
       const L = all.get(id); if (!L) return null;
       const name = String(L.LayerName ?? '');
-      if (top && SKIP_TOP.includes(name.trim())) return null;
+      if (top && (SKIP_TOP.includes(name.trim()) || (L.DrawColorEnable && !L.LayerFolder))) return null;
       const warn: string[] = [], folder = !!L.LayerFolder;
       let blend = BLEND[L.LayerComposite as number];
       if (!blend) { warn.push('clipBlendUnverified'); blend = 'normal'; }
@@ -226,16 +227,16 @@ function shift(nodes: PsdNode[], dx: number, dy: number) {
   }
 }
 
-// Straight-alpha float RGBA flattened on white, and the box of the drawing (pixels darker than INK).
-function flatten(buf: Float32Array, W: number, H: number) {
+// Straight-alpha float RGBA as bytes (fully transparent pixels left zero), and the box of the drawing (alpha ≥ SEEN).
+function toBytes(buf: Float32Array, W: number, H: number) {
   const out = new Uint8ClampedArray(W * H * 4);
   let x0 = W, y0 = H, x1 = -1, y1 = -1;
   for (let y = 0, p = 0; y < H; y++) {
     let any = false;
     for (let x = 0; x < W; x++, p += 4) {
-      const a = buf[p + 3], k = 255 * (1 - a), r = buf[p] * a * 255 + k, g = buf[p + 1] * a * 255 + k, b = buf[p + 2] * a * 255 + k;
-      out[p] = r; out[p + 1] = g; out[p + 2] = b; out[p + 3] = 255;
-      if (out[p] < INK || out[p + 1] < INK || out[p + 2] < INK) { any = true; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+      out[p + 3] = buf[p + 3] * 255; if (!out[p + 3]) continue;
+      out[p] = buf[p] * 255; out[p + 1] = buf[p + 1] * 255; out[p + 2] = buf[p + 2] * 255;
+      if (out[p + 3] >= SEEN) { any = true; if (x < x0) x0 = x; if (x > x1) x1 = x; }
     }
     if (any) { if (y < y0) y0 = y; y1 = y; }
   }
@@ -244,7 +245,7 @@ function flatten(buf: Float32Array, W: number, H: number) {
 
 export function panelRect(i: number): Rect { return { x: SHEET.x0 + i * SHEET.size, y: SHEET.y0, w: SHEET.size, h: SHEET.size }; }
 
-// One panel composited on white: the drawing's box in panel coordinates and its pixels (opaque RGBA), or null when blank.
+// One panel composited: the drawing's box in panel coordinates and its pixels (straight-alpha RGBA), or null when blank.
 export async function renderPanel(sheet: Sheet, i: number, warn: SheetResult['warnings'] = [], signal?: AbortSignal): Promise<SheetView> {
   const r = panelRect(i);
   const { nodes, area } = await nodesIn(sheet.layers, r, warn, signal);
@@ -252,7 +253,7 @@ export async function renderPanel(sheet: Sheet, i: number, warn: SheetResult['wa
   shift(nodes, area.x, area.y);
   const doc: PsdDoc = { width: area.w, height: area.h, children: nodes };
   const { buf } = compositeDocument(doc);
-  const flat = flatten(buf, area.w, area.h);
+  const flat = toBytes(buf, area.w, area.h);
   if (!flat.box) return { box: null, rgba: null };
   const b = flat.box, px = new Uint8ClampedArray(b.w * b.h * 4);
   for (let y = 0; y < b.h; y++) px.set(flat.rgba.subarray(((b.y + y) * area.w + b.x) * 4, ((b.y + y) * area.w + b.x + b.w) * 4), y * b.w * 4);
@@ -272,7 +273,8 @@ export async function renderSheet(buf: ArrayBuffer, SQL: SqlJsStatic, progress?:
 
 // The square cut from every panel: wide enough for the widest drawing on both sides of the axis, tall enough for the
 // tallest, plus `margin` (fraction of the larger side) on each side. Panel coordinates; null when all panels are blank.
-export function squareOf(boxes: (Rect | null)[], margin: number): { x: number; y: number; size: number } | null {
+export interface Square { x: number; y: number; size: number }
+export function squareOf(boxes: (Rect | null)[], margin: number): Square | null {
   const axis = SHEET.size / 2;
   let half = 0, top = Infinity, bottom = -Infinity;
   for (const b of boxes) if (b) { half = Math.max(half, axis - b.x, b.x + b.w - axis); top = Math.min(top, b.y); bottom = Math.max(bottom, b.y + b.h); }
@@ -281,16 +283,16 @@ export function squareOf(boxes: (Rect | null)[], margin: number): { x: number; y
   return { x: axis - size / 2, y: Math.round((top + bottom - size) / 2), size };
 }
 
-// The output image: the square on white with the panel's drawing in it.
-export function viewPixels(v: SheetView, sq: { x: number; y: number; size: number }) {
-  const S = sq.size, out = new Uint8ClampedArray(S * S * 4).fill(255);
-  if (!v.box || !v.rgba) return out;
-  const b = v.box;
-  for (let y = 0; y < b.h; y++) {
-    const oy = b.y + y - sq.y; if (oy < 0 || oy >= S) continue;
-    const x0 = Math.max(0, sq.x - b.x), x1 = Math.min(b.w, sq.x + S - b.x); if (x1 <= x0) continue;
-    out.set(v.rgba.subarray((y * b.w + x0) * 4, (y * b.w + x1) * 4), (oy * S + b.x + x0 - sq.x) * 4);
-  }
+// The output image is the square, transparent around the panel's drawing. viewRow puts its row y into out (zeroed, size × 4 bytes).
+export function viewRow(v: SheetView, sq: Square, y: number, out: Uint8Array | Uint8ClampedArray) {
+  const b = v.box, sy = y + sq.y - (b?.y ?? 0);
+  if (!b || !v.rgba || sy < 0 || sy >= b.h) return;
+  const x0 = Math.max(0, sq.x - b.x), x1 = Math.min(b.w, sq.x + sq.size - b.x); if (x1 <= x0) return;
+  out.set(v.rgba.subarray((sy * b.w + x0) * 4, (sy * b.w + x1) * 4), (b.x + x0 - sq.x) * 4);
+}
+export function viewPixels(v: SheetView, sq: Square) {
+  const S = sq.size, out = new Uint8ClampedArray(S * S * 4);
+  for (let y = 0; y < S; y++) viewRow(v, sq, y, out.subarray(y * S * 4, (y + 1) * S * 4));
   return out;
 }
 

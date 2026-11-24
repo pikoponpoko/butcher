@@ -1,5 +1,6 @@
 // 四面図: rendering in a worker (one file at a time; the page itself when a worker can't start), crops kept as PNG.
-import { NotSheet, type Rect, type SheetView, renderSheet } from '../../core/clipsheet';
+import { NotSheet, type Rect, type SheetView, type Square, renderSheet, viewRow } from '../../core/clipsheet';
+import { decodePng, encodePng } from '../../core/png';
 import { ensureSQL } from '../image/model';
 import { loadSheetWorker } from '../lazy';
 
@@ -46,24 +47,20 @@ export function stopRender(err: unknown = new Aborted()) {
 }
 
 const canvas = (w: number, h: number) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-const toPng = (c: HTMLCanvasElement) => new Promise<Blob>((ok, no) => c.toBlob(b => b ? ok(b) : no(new Error('保存できませんでした')), 'image/png'));
 
 // A panel's drawing as PNG, and (thumb > 0) a small preview of it as a data URL.
 export async function encodeCrop(rgba: Uint8ClampedArray, w: number, h: number, thumb: number) {
-  const c = canvas(w, h);
-  c.getContext('2d')!.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
   let small: string | undefined;
   if (thumb) {
-    const k = Math.min(1, thumb / Math.max(w, h)), s = canvas(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))), x = s.getContext('2d')!;
-    x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, s.width, s.height); small = s.toDataURL(); s.width = s.height = 0;
+    const c = canvas(w, h), k = Math.min(1, thumb / Math.max(w, h)), s = canvas(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))), x = s.getContext('2d')!;
+    c.getContext('2d')!.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+    x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, s.width, s.height); small = s.toDataURL(); s.width = s.height = c.width = c.height = 0;
   }
-  try { return { png: await toPng(c), thumb: small }; } finally { c.width = c.height = 0; }
+  return { png: await encodePng(w, h, (y, out) => out.set(rgba.subarray(y * w * 4, (y + 1) * w * 4))), thumb: small };
 }
 
-// The output image: the shared square on white with the panel's drawing at its place.
-export async function squarePng(png: Blob, box: Rect, sq: { x: number; y: number; size: number }) {
-  const bmp = await createImageBitmap(png, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-  const c = canvas(sq.size, sq.size), x = c.getContext('2d')!;
-  x.fillStyle = '#ffffff'; x.fillRect(0, 0, sq.size, sq.size); x.drawImage(bmp, box.x - sq.x, box.y - sq.y); bmp.close();
-  try { return await toPng(c); } finally { c.width = c.height = 0; }
+// The output image: the shared square, transparent around the panel's drawing.
+export async function squarePng(png: Blob, box: Rect, sq: Square) {
+  const v = { box, rgba: (await decodePng(png)).data };
+  return encodePng(sq.size, sq.size, (y, out) => viewRow(v, sq, y, out));
 }
