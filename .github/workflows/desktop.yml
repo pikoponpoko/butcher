@@ -1,13 +1,13 @@
 name: Desktop
+# PR/push では動かさない（Actions の分数節約）。必要なときだけ手動実行する。
 on:
-  pull_request:
-    paths: ['desktop/**', 'src/**', 'public/**', 'index.html', 'package.json', '.github/workflows/desktop.yml']
   workflow_dispatch:
     inputs:
       release:
         description: GitHub Releases に公開する（desktop/package.json の version をタグ v<version> にする）
         type: boolean
         default: true
+
 permissions:
   contents: write
 jobs:
