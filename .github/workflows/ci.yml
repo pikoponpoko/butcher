@@ -1,8 +1,8 @@
 name: CI
+# PR/push では動かさない（Actions の分数節約）。必要なときだけ手動実行する。
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+
 jobs:
   check:
     runs-on: ubuntu-latest
